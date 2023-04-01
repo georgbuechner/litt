@@ -77,9 +77,9 @@ fn test_index_and_search() {
         const PAGE: u32 = 1;
         let text = doc.extract_text(&[PAGE]).unwrap();
         index_writer.add_document(doc!(
-            title => TEST_FILE_NAME, 
+            title => TEST_FILE_NAME,
             path => TEST_FILE_PATH,
-            page => u64::from(PAGE), 
+            page => u64::from(PAGE),
             body => text)
         ).unwrap();
 
@@ -92,7 +92,7 @@ fn test_index_and_search() {
         index_writer.commit().unwrap();
 
         // # Searching
-        
+
         // init search
         let search_scheama = SearchSchema::new(title, path, page, body).unwrap();
         let search = Search::new(index, search_scheama).unwrap();

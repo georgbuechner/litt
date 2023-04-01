@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tantivy = "0.19.2"
+tantivy = { workspace = true }
 mockall_double = { workspace = true }
-
-[dev-dependencies]
 mockall = { workspace = true }
+lopdf = { workspace = true }
+walkdir = "2.3.3"

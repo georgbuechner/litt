@@ -10,3 +10,4 @@ members = [
 tantivy = "0.19.2"
 mockall_double = "0.3.0"
 mockall = "0.11.4"
+lopdf = "0.29.0"
