@@ -1,28 +1,28 @@
-use std::collections::{HashMap, LinkedList};
 use std::panic;
 use std::fs::{create_dir_all, remove_dir_all, remove_file};
 
 use lopdf::Document;
 use tantivy::schema::{Schema, TEXT, STORED};
-use tantivy::query::QueryParser;
-use tantivy::{Index, doc, Score, DocAddress};
-use tantivy::collector::TopDocs;
+use tantivy::{Index, doc};
 use crate::helpers::generate_fake_pdf_document;
+extern crate litt_search;
+use litt_search::search::{Search, SearchSchema};
 
 mod helpers;
 
 const TEST_DIR_NAME: &str = "resources";
-const TEST_FILE_NAME: &str = "test.pdf";
+const TEST_FILE_NAME: &str = "test";
+const TEST_FILE_PATH: &str = "test.pdf";
 
 fn setup() {
     create_dir_all(TEST_DIR_NAME).expect(&*format!("Failed to create directory: {}", TEST_DIR_NAME));
     let mut doc = generate_fake_pdf_document();
-    doc.save(TEST_FILE_NAME).expect(&*format!("Failed to save test document: {}", TEST_FILE_NAME));
+    doc.save(TEST_FILE_PATH).expect(&*format!("Failed to save test document: {}", TEST_FILE_NAME));
 }
 
 fn teardown() {
     remove_dir_all(TEST_DIR_NAME).expect(&*format!("Failed to remove directory: {}", TEST_DIR_NAME));
-    remove_file(TEST_FILE_NAME).expect(&*format!("Failed to save test document: {}", TEST_FILE_NAME));
+    remove_file(TEST_FILE_PATH).expect(&*format!("Failed to save test document: {}", TEST_FILE_NAME));
 }
 
 fn run_test<T>(test: T) -> ()
@@ -45,7 +45,7 @@ fn test_index_and_search() {
         println!("--- LITT ---");
 
         println!("Parsing document");
-        let doc = Document::load("test.pdf").unwrap();
+        let doc = Document::load(TEST_FILE_PATH).unwrap();
 
         // First we need to define a schema ...
 
@@ -58,7 +58,8 @@ fn test_index_and_search() {
         // documents that were selected during the search phase.
         let mut schema_builder = Schema::builder();
         let title = schema_builder.add_text_field("title", TEXT | STORED);
-        let page = schema_builder.add_text_field("page", TEXT | STORED);
+        let path = schema_builder.add_text_field("path", TEXT | STORED);
+        let page = schema_builder.add_u64_field("page", STORED);
         let body = schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
 
@@ -75,7 +76,14 @@ fn test_index_and_search() {
         // Fake document has just 1 page
         const PAGE: u32 = 1;
         let text = doc.extract_text(&[PAGE]).unwrap();
-        index_writer.add_document(doc!(title => TEST_FILE_NAME, page => PAGE.to_string(), body => text)).unwrap();
+        index_writer.add_document(doc!(
+            title => TEST_FILE_NAME, 
+            path => TEST_FILE_PATH,
+            page => u64::from(PAGE), 
+            body => text)
+        ).unwrap();
+
+
 
         // We need to call .commit() explicitly to force the
         // index_writer to finish processing the documents in the queue,
@@ -84,40 +92,19 @@ fn test_index_and_search() {
         index_writer.commit().unwrap();
 
         // # Searching
+        
+        // init search
+        let search_scheama = SearchSchema::new(title, path, page, body).unwrap();
+        let search = Search::new(index, search_scheama).unwrap();
 
-        let reader = index.reader().unwrap();
+        // do seach: expect 1 results
+        let searched_word = String::from("Hello");
+        let results = search.search(&searched_word).unwrap();
 
-        let searcher = reader.searcher();
-
-        let query_parser = QueryParser::for_index(&index, vec![title, body]);
-
-        // QueryParser may fail if the query is not in the right
-        // format. For user facing applications, this can be a problem.
-        // A ticket has been opened regarding this problem.
-        let searched_word = "Hello";
-        let query = query_parser.parse_query(searched_word).unwrap();
-
-        println!("searching document");
-        // Perform search.
-        // `topdocs` contains the 10 most relevant doc ids, sorted by decreasing scores...
-        let top_docs: Vec<(Score, DocAddress)> = searcher.search(&query, &TopDocs::with_limit(10)).unwrap();
-
-        // Assemble results
-        let mut results: HashMap<String, LinkedList<String>> = HashMap::new();
-        for (_score, doc_address) in top_docs {
-            // Retrieve the actual content of documents given its `doc_address`.
-            let retrieved_doc = searcher.doc(doc_address).unwrap();
-            let cur_title = retrieved_doc.get_first(title).unwrap().as_text().unwrap();
-            let cur_page = retrieved_doc.get_first(page).unwrap().as_text().unwrap();
-            results.entry(cur_title.to_string()).and_modify(|pages| pages.push_back(cur_page.to_string())).or_insert(LinkedList::from([cur_page.to_string()]));
-        }
-
-        println!("Found \"{}\" in {} documents: ", searched_word, results.len());
-        for (title, pages) in results {
+        for (title, pages) in &results {
             println!("\"{}\". Pages: {:?}", title, pages);
             for page in pages {
-                let p: u32 = page.trim().parse().expect("Page is not a number!");
-                let text = doc.extract_text(&[p]).unwrap();
+                let text = doc.extract_text(&[*page]).unwrap();
                 let preview_index = text.find(&searched_word).expect("Searched word not found on page!");
                 let start = if preview_index > 50 { preview_index - 50 } else { 0 };
                 let end = if (preview_index + searched_word.len() + 50) < text.len() { preview_index + searched_word.len() + 50 } else { text.len() };
@@ -125,5 +112,10 @@ fn test_index_and_search() {
                 println!("- {}: \"{}\"", page, preview);
             }
         }
+
+        println!("Found \"{}\" in {} documents: ", searched_word, results.len());
+
+        assert!(results.contains_key(TEST_FILE_NAME));
+        assert_eq!(results.get(TEST_FILE_NAME).unwrap().len(), 1);
     });
 }
