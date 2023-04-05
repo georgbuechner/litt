@@ -1,22 +1,20 @@
-use tantivy::schema::{STORED, TEXT};
-
 use crate::{LittIndexError, Result};
 use crate::LittIndexError::{PdfParseError, WriteError};
 use lopdf::Document as PdfDocument;
 use tantivy::{IndexWriter, Index as TantivyIndex};
 use tantivy::schema::{Document as TantivyDocument, Schema};
 use walkdir::{DirEntry, WalkDir};
+use litt_shared::search_schema::SearchSchema;
 
 pub struct Index {
     path: String,
     index: TantivyIndex,
-    schema: Schema,
+    schema: SearchSchema,
 }
 
 impl Index {
-    pub fn new(path: &str) -> Result<Self> {
-        let schema = Self::build_schema();
-        let index = Self::create_index(path.to_string(), schema.clone())?;
+    pub fn new(path: &str, schema: SearchSchema) -> Result<Self> {
+        let index = Self::create_index(path.to_string(), schema.schema.clone())?;
         Ok(Self {
             path: path.to_string(),
             index,
@@ -37,7 +35,6 @@ impl Index {
                     eprintln!("Error reading document ({}): {}", path, e)
                 }
                 Ok(pdf_document) => {
-                    // TODO extract title from file name?
                     self.add_document(&mut index_writer, pdf_document, path)?;
                 }
             }
@@ -52,12 +49,12 @@ impl Index {
         Ok(())
     }
 
-    fn build_schema() -> Schema {
-        let mut schema_builder = Schema::builder();
-        schema_builder.add_text_field("title", TEXT | STORED);
-        schema_builder.add_text_field("page", TEXT | STORED);
-        schema_builder.add_text_field("body", TEXT);
-        schema_builder.build()
+    pub fn index(self) -> TantivyIndex {
+        self.index
+    }
+
+    pub fn schema(self) -> SearchSchema {
+        self.schema
     }
 
     fn create_index(path: String, schema: Schema) -> Result<TantivyIndex> {
@@ -88,21 +85,27 @@ impl Index {
         pdf_paths_with_document_results
     }
 
-    fn add_document(&self, index_writer: &mut IndexWriter, pdf_document: PdfDocument, title: String) -> Result<()> {
+    fn add_document(&self, index_writer: &mut IndexWriter, pdf_document: PdfDocument, path: String) -> Result<()> {
         // Let's index one documents!
         println!("Indexing document");
         let mut tantivy_document = TantivyDocument::new();
+        let title_option = path.strip_suffix(".pdf");
 
         for (i, _) in pdf_document.page_iter().enumerate() {
-            let page_number = i as u32 + 1;
-             for (field, entry) in self.schema.fields() {
+            let page_number = i as u64 + 1;
+             for (field, entry) in self.schema.schema.fields() {
                 match entry.name() {
-                    "title" => tantivy_document.add_text(field, title.clone()),
-                    "page" => tantivy_document.add_text(field, page_number),
+                    "path" => tantivy_document.add_text(field, path.clone()),
+                    "title" => {
+                        if let Some(title) = title_option {
+                            tantivy_document.add_text(field, title)
+                        }
+                    },
+                    "page" => tantivy_document.add_u64(field, page_number),
                     "body" =>
                         tantivy_document.add_text(
                             field,
-                            pdf_document.extract_text(&[page_number])
+                            pdf_document.extract_text(&[page_number as u32])
                                 .map_err(|e| PdfParseError(e.to_string()))?),
                     _ => {}
                 }
@@ -118,20 +121,70 @@ impl Index {
 
 #[cfg(test)]
 mod tests {
+    use std::panic;
+    use once_cell::sync::Lazy;
     use super::*;
+    use serial_test::serial;
+    use litt_shared::test_helpers::{cleanup_dir_and_file, save_fake_pdf_document};
 
-    /// Create new index with mock methods, asserting that
-    /// * [SchemaBuilder::add_text_field()](tantivy::schema::SchemaBuilder::add_text_field) is called 3 times
-    /// * [SchemaBuilder::build()](tantivy::schema::SchemaBuilder::build) is called once
-    /// * [index::create_in_dir()](tantivy::Index::create_in_dir) is called once
-    #[test]
-    fn test_new() {
-        Index::new("test").unwrap();
+    const TEST_DIR_NAME: &str = "resources";
+    const TEST_FILE_PATH: &str = "test.pdf";
+
+    static SEARCH_SCHEMA: Lazy<SearchSchema> = Lazy::new(SearchSchema::default);
+
+    fn setup() {
+        save_fake_pdf_document(TEST_DIR_NAME, TEST_FILE_PATH);
+    }
+
+    fn teardown() {
+        cleanup_dir_and_file(TEST_DIR_NAME, TEST_FILE_PATH);
+    }
+
+    fn run_test<T>(test: T)
+        where T: FnOnce() + panic::UnwindSafe {
+        setup();
+
+        let result = panic::catch_unwind(|| {
+            test()
+        });
+
+        teardown();
+
+        assert!(result.is_ok())
     }
 
     #[test]
-    fn test_get_all_documents() {
-        let index = Index::new("test").unwrap();
-        index.add_all_documents().unwrap();
+    #[serial]
+    fn test_new() {
+        run_test(|| {
+            let index = Index::new(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+
+            assert_eq!(SEARCH_SCHEMA.clone().schema, index.schema.schema);
+            assert_eq!(TEST_DIR_NAME, index.path);
+        });
+
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_pdf_file_paths() {
+        run_test(|| {
+            let index = Index::new(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            let dir_entries = index.get_pdf_dir_entries();
+            let file_name = dir_entries.first().unwrap().file_name().to_str().unwrap();
+            assert_eq!(1, dir_entries.len());
+            assert_eq!(TEST_FILE_PATH, file_name);
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn test_add_all_documents() {
+        run_test(|| {
+            let index = Index::new(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            index.add_all_documents().unwrap();
+            let segments = index.index.searchable_segments().unwrap();
+            assert_eq!(1, segments.len());
+        });
     }
 }

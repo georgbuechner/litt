@@ -8,3 +8,4 @@ tantivy = { workspace = true }
 lopdf = { workspace = true }
 litt_search = { path = "../search" }
 litt_shared = { path = "../shared" }
+litt_index = { path = "../index" }
