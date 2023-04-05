@@ -1,29 +1,12 @@
 use std::collections::{HashMap, LinkedList};
-use std::vec;
-use tantivy::schema::Field;
 use tantivy::{Index, Score, DocAddress, IndexReader, ReloadPolicy};
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 
+use litt_shared::search_schema::SearchSchema;
+
 use crate::Result;
 use crate::LittSearchError::{InitError, SearchError};
-
-pub struct SearchSchema {
-    title: Field, // idealy contained in tantivy_wrapper
-    path: Field,  // idealy contained in tantivy_wrapper
-    page: Field,  // idealy contained in tantivy_wrapper
-    body: Field   // idealy contained in tantivy_wrapper
-}
-
-impl SearchSchema {
-    pub fn new(title: Field, path: Field, page: Field, body: Field) -> Result<Self> {
-        Ok(Self {title, path, page, body})
-    }
-
-    pub fn default_fields(&self) -> std::vec::Vec<Field> {
-        vec![self.title, self.body]
-    }
-}
 
 pub struct Search {
     index: Index,
@@ -181,7 +164,7 @@ mod tests {
         )).unwrap();
         index_writer.commit().unwrap();
 
-        let search_scheama = SearchSchema::new(title, path, page, body).unwrap();
+        let search_scheama = SearchSchema::new(title, path, page, body, schema);
         let search = Search::new(index, search_scheama).unwrap();
         search
     }

@@ -8,4 +8,4 @@ crate-type = ["lib"]
 
 [dependencies]
 tantivy = "0.19.2"
-
+litt_shared = { path = "../shared" }

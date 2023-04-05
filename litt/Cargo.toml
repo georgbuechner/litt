@@ -7,3 +7,4 @@ edition = "2021"
 tantivy = { workspace = true }
 lopdf = { workspace = true }
 litt_search = { path = "../search" }
+litt_shared = { path = "../shared" }

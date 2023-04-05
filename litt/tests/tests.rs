@@ -4,11 +4,9 @@ use std::fs::{create_dir_all, remove_dir_all, remove_file};
 use lopdf::Document;
 use tantivy::schema::{Schema, TEXT, STORED};
 use tantivy::{Index, doc};
-use crate::helpers::generate_fake_pdf_document;
+use litt_shared::test_helpers::generate_fake_pdf_document;
 extern crate litt_search;
 use litt_search::search::{Search, SearchSchema};
-
-mod helpers;
 
 const TEST_DIR_NAME: &str = "resources";
 const TEST_FILE_NAME: &str = "test";

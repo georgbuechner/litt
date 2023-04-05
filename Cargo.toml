@@ -3,7 +3,8 @@
 members = [
     "litt",
     "search",
-    "index"
+    "index",
+    "shared"
 ]
 
 [workspace.dependencies]
