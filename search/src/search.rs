@@ -24,7 +24,7 @@ impl Search {
         Ok(Self {index, reader, schema})
     }
 
-    pub fn search(&self, input: &String) -> Result<HashMap<String, LinkedList<u32>>> {
+    pub fn search(&self, input: &str) -> Result<HashMap<String, LinkedList<u32>>> {
         let searcher = self.reader.searcher();
         let query_parser = QueryParser::for_index(&self.index, self.schema.default_fields());
 
@@ -53,15 +53,15 @@ impl Search {
                 .expect( "Fatal: Field \"page\" is not a number!");
             let page: u32 = cur_page
                 .try_into().
-                expect(&format!("Fatal: Field \"page\" ({}) is bigger than u32!", cur_page));
+                unwrap_or_else(|_| panic!("Fatal: Field \"page\" ({}) is bigger than u32!", cur_page));
             results.entry(cur_title.to_string())
                 .and_modify(|pages| pages.push_back(page))
-                .or_insert(LinkedList::from([page]));
+                .or_insert_with(|| LinkedList::from([page]));
         }
         Ok(results)
     }
 
-    fn get_preview(&self, text: String, phrase: &String) -> Result<String> {
+    pub fn get_preview(&self, text: String, phrase: &String) -> Result<String> {
         let p_index = text.to_lowercase().find(&(phrase.to_lowercase()))
             .expect("Searched word not found on page!");
         let text = format!(
@@ -78,13 +78,13 @@ impl Search {
         Ok(format!("...{}...", preview))
     }
 
-    fn get_preview_on_page(text: String, input: &String) -> Result<HashMap<String, String>> {
+    pub fn get_preview_on_page(_text: String, _input: &str) -> Result<HashMap<String, String>> {
         let previews: HashMap<String, String> = HashMap::new();
         Ok(previews)
     }
 
     pub fn get_previews(
-        &self, _path: &String, _pages: LinkedList<u32>, _input: &String
+        &self, _path: &str, _pages: LinkedList<u32>, _input: &str
     ) -> Result<HashMap<u32, HashMap<String, String>>> {
         let previews: HashMap<u32, HashMap<String, String>> = HashMap::new();
         Ok(previews)
@@ -165,8 +165,7 @@ mod tests {
         index_writer.commit().unwrap();
 
         let search_scheama = SearchSchema::new(title, path, page, body, schema);
-        let search = Search::new(index, search_scheama).unwrap();
-        search
+        Search::new(index, search_scheama).unwrap()
     }
 
     #[test] 

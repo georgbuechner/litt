@@ -1,5 +1,4 @@
 use std::panic;
-use std::fs::{create_dir_all, remove_dir_all, remove_file};
 
 use lopdf::Document;
 
