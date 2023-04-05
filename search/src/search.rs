@@ -114,15 +114,15 @@ mod tests {
         limbs and branches that arch over the pool";
 
     fn setup() {
-        create_dir_all(TEST_DIR_NAME).expect(&*format!("Failed to create directory: {}", TEST_DIR_NAME));
+        create_dir_all(TEST_DIR_NAME).unwrap_or_else(|_| panic!("Failed to create directory: {}", TEST_DIR_NAME));
     }
 
     fn teardown() {
-        remove_dir_all(TEST_DIR_NAME).expect(&*format!("Failed to remove directory: {}", TEST_DIR_NAME));
+        remove_dir_all(TEST_DIR_NAME).unwrap_or_else(|_| panic!("Failed to remove directory: {}", TEST_DIR_NAME));
     }
 
-    fn run_test<T>(test: T) -> ()
-        where T: FnOnce() -> () + panic::UnwindSafe {
+    fn run_test<T>(test: T)
+        where T: FnOnce() + panic::UnwindSafe {
         setup();
 
         let result = panic::catch_unwind(|| {

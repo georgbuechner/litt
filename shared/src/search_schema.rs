@@ -16,7 +16,13 @@ impl SearchSchema {
         Self {title, path, page, body, schema}
     }
 
-    pub fn default() -> Self {
+    pub fn default_fields(&self) -> Vec<Field> {
+        vec![self.title, self.body]
+    }
+}
+
+impl Default for SearchSchema {
+    fn default() -> Self {
         let mut schema_builder = Schema::builder();
         let title = schema_builder.add_text_field("title", TEXT | STORED);
         let path = schema_builder.add_text_field("path", TEXT | STORED);
@@ -24,10 +30,5 @@ impl SearchSchema {
         let body = schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
         Self { title, path, page, body, schema }
-    }
-
-
-    pub fn default_fields(&self) -> Vec<Field> {
-        vec![self.title, self.body]
     }
 }

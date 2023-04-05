@@ -59,8 +59,8 @@ fn teardown() {
     cleanup_dir_and_file(TEST_DIR_NAME, TEST_FILE_PATH);
 }
 
-fn run_test<T>(test: T) -> ()
-    where T: FnOnce() -> () + panic::UnwindSafe {
+fn run_test<T>(test: T)
+    where T: FnOnce() + panic::UnwindSafe {
     setup();
 
     let result = panic::catch_unwind(|| {
