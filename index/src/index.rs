@@ -13,7 +13,7 @@ pub struct Index {
 }
 
 impl Index {
-    pub fn new(path: &str, schema: SearchSchema) -> Result<Self> {
+    pub fn create(path: &str, schema: SearchSchema) -> Result<Self> {
         let index = Self::create_index(path.to_string(), schema.schema.clone())?;
         Ok(Self {
             path: path.to_string(),
@@ -22,7 +22,18 @@ impl Index {
         })
     }
 
-    /// Add all PDF documents in located in the path this index was created for (see [new()](Self::new)).
+    pub fn open_or_create(path: &str, schema: SearchSchema) -> Result<Self> {
+        let index = Self::create_index(path.to_string(), schema.schema.clone())
+            .unwrap_or(Self::open_index(path.to_string())?);
+        // TODO make search schema parameter optional and load schema from existing index
+        Ok(Self{
+            path: path.to_string(),
+            index,
+            schema
+        })
+    }
+
+    /// Add all PDF documents in located in the path this index was created for (see [new()](Self::create)).
     pub fn add_all_documents(&self) -> Result<()> {
         let mut index_writer = self.index.writer(100_000_000)
             .map_err(|e| WriteError(e.to_string()))?;
@@ -60,6 +71,11 @@ impl Index {
     fn create_index(path: String, schema: Schema) -> Result<TantivyIndex> {
         TantivyIndex::create_in_dir(path, schema)
             .map_err(|e| LittIndexError::CreationError(e.to_string()))
+    }
+
+    fn open_index(path: String) -> Result<TantivyIndex> {
+        TantivyIndex::open_in_dir(path)
+            .map_err(|e| LittIndexError::OpenError(e.to_string()))
     }
 
     fn get_pdf_dir_entries(&self) -> Vec<DirEntry> {
@@ -155,23 +171,36 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_new() {
+    fn test_create() {
         run_test(|| {
-            let index = Index::new(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
 
             assert_eq!(SEARCH_SCHEMA.clone().schema, index.schema.schema);
             assert_eq!(TEST_DIR_NAME, index.path);
         });
+    }
 
+    #[test]
+    #[serial]
+    fn test_open_or_create() {
+        run_test(|| {
+            Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+
+            let opened_index = Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+
+            assert_eq!(SEARCH_SCHEMA.clone().schema, opened_index.schema.schema);
+            assert_eq!(TEST_DIR_NAME, opened_index.path);
+        });
     }
 
     #[test]
     #[serial]
     fn test_get_pdf_file_paths() {
         run_test(|| {
-            let index = Index::new(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
             let dir_entries = index.get_pdf_dir_entries();
             let file_name = dir_entries.first().unwrap().file_name().to_str().unwrap();
+
             assert_eq!(1, dir_entries.len());
             assert_eq!(TEST_FILE_PATH, file_name);
         });
@@ -181,7 +210,7 @@ mod tests {
     #[serial]
     fn test_add_all_documents() {
         run_test(|| {
-            let index = Index::new(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
             index.add_all_documents().unwrap();
             let segments = index.index.searchable_segments().unwrap();
             assert_eq!(1, segments.len());

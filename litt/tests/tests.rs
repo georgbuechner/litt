@@ -20,7 +20,7 @@ fn test_index_and_search() {
         println!("--- LITT ---");
         let search_schema = SearchSchema::default();
 
-        let index = Index::new(TEST_DIR_NAME, search_schema.clone()).unwrap();
+        let index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
         index.add_all_documents().unwrap();
 
         // # Searching
