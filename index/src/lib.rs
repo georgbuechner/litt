@@ -8,7 +8,7 @@ pub enum LittIndexError {
     CreationError(String),
     OpenError(String),
     WriteError(String),
-    PdfParseError(String)
+    PdfParseError(String),
 }
 
 impl fmt::Display for LittIndexError {
@@ -17,7 +17,7 @@ impl fmt::Display for LittIndexError {
             LittIndexError::CreationError(s) => write!(f, "Index Creation Error: {}", s),
             LittIndexError::OpenError(s) => write!(f, "Error opening existing index: {}", s),
             LittIndexError::WriteError(s) => write!(f, "Index Write Error: {}", s),
-            LittIndexError::PdfParseError(s) => write!(f, "Error parsing PDF: {}", s)
+            LittIndexError::PdfParseError(s) => write!(f, "Error parsing PDF: {}", s),
         }
     }
 }

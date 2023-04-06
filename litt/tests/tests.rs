@@ -2,10 +2,10 @@ use std::panic;
 
 use lopdf::Document;
 
-use litt_shared::test_helpers::{save_fake_pdf_document, cleanup_dir_and_file};
+use litt_shared::test_helpers::{cleanup_dir_and_file, save_fake_pdf_document};
 extern crate litt_search;
-use litt_search::search::{Search};
 use litt_index::index::Index;
+use litt_search::search::Search;
 use litt_shared::search_schema::SearchSchema;
 
 const TEST_DIR_NAME: &str = "resources";
@@ -36,15 +36,29 @@ fn test_index_and_search() {
             println!("\"{}\". Pages: {:?}", title, pages);
             for page in pages {
                 let text = doc.extract_text(&[*page]).unwrap();
-                let preview_index = text.find(&searched_word).expect("Searched word not found on page!");
-                let start = if preview_index > 50 { preview_index - 50 } else { 0 };
-                let end = if (preview_index + searched_word.len() + 50) < text.len() { preview_index + searched_word.len() + 50 } else { text.len() };
+                let preview_index = text
+                    .find(&searched_word)
+                    .expect("Searched word not found on page!");
+                let start = if preview_index > 50 {
+                    preview_index - 50
+                } else {
+                    0
+                };
+                let end = if (preview_index + searched_word.len() + 50) < text.len() {
+                    preview_index + searched_word.len() + 50
+                } else {
+                    text.len()
+                };
                 let preview = &text[start..end];
                 println!("- {}: \"{}\"", page, preview);
             }
         }
 
-        println!("Found \"{}\" in {} documents: ", searched_word, results.len());
+        println!(
+            "Found \"{}\" in {} documents: ",
+            searched_word,
+            results.len()
+        );
 
         assert!(results.contains_key(TEST_FILE_NAME));
         assert_eq!(results.get(TEST_FILE_NAME).unwrap().len(), 1);
@@ -60,12 +74,12 @@ fn teardown() {
 }
 
 fn run_test<T>(test: T)
-    where T: FnOnce() + panic::UnwindSafe {
+where
+    T: FnOnce() + panic::UnwindSafe,
+{
     setup();
 
-    let result = panic::catch_unwind(|| {
-        test()
-    });
+    let result = panic::catch_unwind(|| test());
 
     teardown();
 

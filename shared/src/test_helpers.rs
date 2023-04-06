@@ -1,5 +1,5 @@
-use std::fs::{create_dir_all, remove_dir_all, remove_file};
 use lopdf::dictionary;
+use std::fs::{create_dir_all, remove_dir_all, remove_file};
 
 use lopdf::content::{Content, Operation};
 use lopdf::{Document, Object, Stream};
@@ -52,13 +52,16 @@ pub fn generate_fake_pdf_document() -> Document {
 }
 
 pub fn save_fake_pdf_document(directory: &str, file_name: &str) {
-    create_dir_all(directory).unwrap_or_else(|_| panic!("Failed to create directory: {}", directory));
+    create_dir_all(directory)
+        .unwrap_or_else(|_| panic!("Failed to create directory: {}", directory));
     let mut doc = generate_fake_pdf_document();
-    doc.save(format!("{}/{}", directory, file_name)).unwrap_or_else(|_| panic!("Failed to save test document: {}", file_name));
+    doc.save(format!("{}/{}", directory, file_name))
+        .unwrap_or_else(|_| panic!("Failed to save test document: {}", file_name));
 }
 
 pub fn cleanup_dir_and_file(directory: &str, file_name: &str) {
-    remove_dir_all(directory).unwrap_or_else(|_| panic!("Failed to remove directory: {}", directory));
+    remove_dir_all(directory)
+        .unwrap_or_else(|_| panic!("Failed to remove directory: {}", directory));
     // remove if exists, drop result
     let _ = remove_file(file_name);
 }

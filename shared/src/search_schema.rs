@@ -1,5 +1,5 @@
 use tantivy::schema::Field;
-use tantivy::schema::{Schema};
+use tantivy::schema::Schema;
 use tantivy::schema::{STORED, TEXT};
 
 #[derive(Clone)]
@@ -8,12 +8,18 @@ pub struct SearchSchema {
     pub path: Field,
     pub page: Field,
     pub body: Field,
-    pub schema: Schema
+    pub schema: Schema,
 }
 
 impl SearchSchema {
     pub fn new(title: Field, path: Field, page: Field, body: Field, schema: Schema) -> Self {
-        Self {title, path, page, body, schema}
+        Self {
+            title,
+            path,
+            page,
+            body,
+            schema,
+        }
     }
 
     pub fn default_fields(&self) -> Vec<Field> {
@@ -29,6 +35,12 @@ impl Default for SearchSchema {
         let page = schema_builder.add_u64_field("page", STORED);
         let body = schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
-        Self { title, path, page, body, schema }
+        Self {
+            title,
+            path,
+            page,
+            body,
+            schema,
+        }
     }
 }

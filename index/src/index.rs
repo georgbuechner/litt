@@ -1,10 +1,10 @@
-use crate::{LittIndexError, Result};
-use crate::LittIndexError::{PdfParseError, WriteError};
-use lopdf::Document as PdfDocument;
-use tantivy::{IndexWriter, Index as TantivyIndex};
-use tantivy::schema::{Document as TantivyDocument, Schema};
-use walkdir::{DirEntry, WalkDir};
+use crate::LittIndexError::{CreationError, OpenError, PdfParseError, WriteError};
+use crate::Result;
 use litt_shared::search_schema::SearchSchema;
+use lopdf::Document as PdfDocument;
+use tantivy::schema::{Document as TantivyDocument, Schema};
+use tantivy::{Index as TantivyIndex, IndexWriter};
+use walkdir::{DirEntry, WalkDir};
 
 pub struct Index {
     path: String,
@@ -26,16 +26,18 @@ impl Index {
         let index = Self::create_index(path.to_string(), schema.schema.clone())
             .unwrap_or(Self::open_index(path.to_string())?);
         // TODO make search schema parameter optional and load schema from existing index
-        Ok(Self{
+        Ok(Self {
             path: path.to_string(),
             index,
-            schema
+            schema,
         })
     }
 
     /// Add all PDF documents in located in the path this index was created for (see [new()](Self::create)).
     pub fn add_all_documents(&self) -> Result<()> {
-        let mut index_writer = self.index.writer(100_000_000)
+        let mut index_writer = self
+            .index
+            .writer(100_000_000)
             .map_err(|e| WriteError(e.to_string()))?;
 
         let pdf_paths_with_document_results = self.load_pdf_docs();
@@ -56,7 +58,9 @@ impl Index {
         // flush the current index to the disk, and advertise
         // the existence of new documents.
 
-        index_writer.commit().map_err(|e| WriteError(e.to_string()))?;
+        index_writer
+            .commit()
+            .map_err(|e| WriteError(e.to_string()))?;
         Ok(())
     }
 
@@ -69,22 +73,20 @@ impl Index {
     }
 
     fn create_index(path: String, schema: Schema) -> Result<TantivyIndex> {
-        TantivyIndex::create_in_dir(path, schema)
-            .map_err(|e| LittIndexError::CreationError(e.to_string()))
+        TantivyIndex::create_in_dir(path, schema).map_err(|e| CreationError(e.to_string()))
     }
 
     fn open_index(path: String) -> Result<TantivyIndex> {
-        TantivyIndex::open_in_dir(path)
-            .map_err(|e| LittIndexError::OpenError(e.to_string()))
+        TantivyIndex::open_in_dir(path).map_err(|e| OpenError(e.to_string()))
     }
 
     fn get_pdf_dir_entries(&self) -> Vec<DirEntry> {
         let walk_dir = WalkDir::new(self.path.clone());
-            walk_dir.follow_links(true)
+        walk_dir
+            .follow_links(true)
             .into_iter()
             .filter_map(|entry_result| entry_result.ok())
-            .filter(|entry| {
-                entry.file_name().to_string_lossy().ends_with("pdf")})
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with("pdf"))
             .collect::<Vec<_>>()
     }
 
@@ -94,14 +96,21 @@ impl Index {
             .iter()
             .map(|dir_entry| {
                 let pdf_path = dir_entry.path().to_owned();
-                (dir_entry.file_name().to_string_lossy().to_string(), PdfDocument::load(pdf_path)
-                .map_err(|e| PdfParseError(e.to_string())))
+                (
+                    dir_entry.file_name().to_string_lossy().to_string(),
+                    PdfDocument::load(pdf_path).map_err(|e| PdfParseError(e.to_string())),
+                )
             })
             .collect::<Vec<(String, std::result::Result<PdfDocument, _>)>>();
         pdf_paths_with_document_results
     }
 
-    fn add_document(&self, index_writer: &mut IndexWriter, pdf_document: PdfDocument, path: String) -> Result<()> {
+    fn add_document(
+        &self,
+        index_writer: &mut IndexWriter,
+        pdf_document: PdfDocument,
+        path: String,
+    ) -> Result<()> {
         // Let's index one documents!
         println!("Indexing document");
         let mut tantivy_document = TantivyDocument::new();
@@ -109,20 +118,21 @@ impl Index {
 
         for (i, _) in pdf_document.page_iter().enumerate() {
             let page_number = i as u64 + 1;
-             for (field, entry) in self.schema.schema.fields() {
+            for (field, entry) in self.schema.schema.fields() {
                 match entry.name() {
                     "path" => tantivy_document.add_text(field, path.clone()),
                     "title" => {
                         if let Some(title) = title_option {
                             tantivy_document.add_text(field, title)
                         }
-                    },
+                    }
                     "page" => tantivy_document.add_u64(field, page_number),
-                    "body" =>
-                        tantivy_document.add_text(
-                            field,
-                            pdf_document.extract_text(&[page_number as u32])
-                                .map_err(|e| PdfParseError(e.to_string()))?),
+                    "body" => tantivy_document.add_text(
+                        field,
+                        pdf_document
+                            .extract_text(&[page_number as u32])
+                            .map_err(|e| PdfParseError(e.to_string()))?,
+                    ),
                     _ => {}
                 }
             }
@@ -137,11 +147,11 @@ impl Index {
 
 #[cfg(test)]
 mod tests {
-    use std::panic;
-    use once_cell::sync::Lazy;
     use super::*;
-    use serial_test::serial;
     use litt_shared::test_helpers::{cleanup_dir_and_file, save_fake_pdf_document};
+    use once_cell::sync::Lazy;
+    use serial_test::serial;
+    use std::panic;
 
     const TEST_DIR_NAME: &str = "resources";
     const TEST_FILE_PATH: &str = "test.pdf";
@@ -157,12 +167,12 @@ mod tests {
     }
 
     fn run_test<T>(test: T)
-        where T: FnOnce() + panic::UnwindSafe {
+    where
+        T: FnOnce() + panic::UnwindSafe,
+    {
         setup();
 
-        let result = panic::catch_unwind(|| {
-            test()
-        });
+        let result = panic::catch_unwind(|| test());
 
         teardown();
 
