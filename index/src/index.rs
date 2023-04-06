@@ -172,7 +172,7 @@ mod tests {
     {
         setup();
 
-        let result = panic::catch_unwind(|| test());
+        let result = panic::catch_unwind(test);
 
         teardown();
 
