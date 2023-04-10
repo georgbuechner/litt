@@ -34,23 +34,9 @@ fn test_index_and_search() {
 
         for (title, pages) in &results {
             println!("\"{}\". Pages: {:?}", title, pages);
-            for page in pages {
-                let text = doc.extract_text(&[*page]).unwrap();
-                let preview_index = text
-                    .find(&searched_word)
-                    .expect("Searched word not found on page!");
-                let start = if preview_index > 50 {
-                    preview_index - 50
-                } else {
-                    0
-                };
-                let end = if (preview_index + searched_word.len() + 50) < text.len() {
-                    preview_index + searched_word.len() + 50
-                } else {
-                    text.len()
-                };
-                let preview = &text[start..end];
-                println!("- {}: \"{}\"", page, preview);
+            for search_result in pages {
+                let preview = search.get_preview(search_result, &searched_word).unwrap();
+                println!("- {}: \"{}\"", search_result.page, preview);
             }
         }
 
