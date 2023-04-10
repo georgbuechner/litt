@@ -1,14 +1,9 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+pub mod search;
+
+#[derive(Debug)]
+pub enum LittSearchError {
+    InitError(String),
+    SearchError(String),
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub type Result<T> = std::result::Result<T, LittSearchError>;
