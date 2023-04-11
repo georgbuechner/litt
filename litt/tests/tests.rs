@@ -1,7 +1,5 @@
 use std::panic;
 
-use lopdf::Document;
-
 use litt_shared::test_helpers::{cleanup_dir_and_file, save_fake_pdf_document};
 extern crate litt_search;
 use litt_index::index::Index;
@@ -15,9 +13,6 @@ const TEST_FILE_PATH: &str = "test.pdf";
 #[test]
 fn test_index_and_search() {
     run_test(|| {
-        let doc = Document::load(format!("{}/{}", TEST_DIR_NAME, TEST_FILE_PATH)).unwrap();
-
-        println!("--- LITT ---");
         let search_schema = SearchSchema::default();
 
         let index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
@@ -26,25 +21,21 @@ fn test_index_and_search() {
         // # Searching
 
         // init search
-        let search = Search::new(index.index(), search_schema).unwrap();
+        let search = Search::new(index, search_schema).unwrap();
 
         // do seach: expect 1 results
         let searched_word = String::from("Hello");
         let results = search.search(&searched_word).unwrap();
 
         for (title, pages) in &results {
-            println!("\"{}\". Pages: {:?}", title, pages);
+            assert_eq!(title, TEST_FILE_NAME);
             for search_result in pages {
                 let preview = search.get_preview(search_result, &searched_word).unwrap();
-                println!("- {}: \"{}\"", search_result.page, preview);
+                assert!(preview.len() > 0);
+                assert!(preview.to_lowercase().find(&searched_word.to_lowercase()).unwrap_or_default() > 0);
+                assert!(preview.find("**").unwrap_or_default() > 0);
             }
         }
-
-        println!(
-            "Found \"{}\" in {} documents: ",
-            searched_word,
-            results.len()
-        );
 
         assert!(results.contains_key(TEST_FILE_NAME));
         assert_eq!(results.get(TEST_FILE_NAME).unwrap().len(), 1);
