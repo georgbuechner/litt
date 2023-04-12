@@ -56,7 +56,7 @@ impl Search {
 
     pub fn search(&self, input: &str) -> Result<HashMap<String, LinkedList<SearchResult>>> {
         let searcher = self.reader.searcher();
-        let query_parser = QueryParser::for_index(&self.index.index(), self.schema.default_fields());
+        let query_parser = QueryParser::for_index(self.index.index(), self.schema.default_fields());
 
         let query = query_parser
             .parse_query(input)
@@ -108,7 +108,7 @@ impl Search {
         println!("Calling `get_preview` for: query: {} and page: {}", input, search_result.page);
         // Prepare creating snippet.
         let searcher = self.reader.searcher();
-        let query_parser = QueryParser::for_index(&self.index.index(), self.schema.default_fields());
+        let query_parser = QueryParser::for_index(self.index.index(), self.schema.default_fields());
         let query = query_parser
             .parse_query(input)
             .map_err(|e| SearchError(e.to_string()))?;
@@ -212,7 +212,7 @@ mod tests {
 
         // Indexing documents
         let index_path = String::from(TEST_DIR_NAME);
-        let tantivy_index = tantivy::Index::create_in_dir(index_path, schema.clone()).unwrap();
+        let tantivy_index = tantivy::Index::create_in_dir(index_path, schema).unwrap();
         let mut index_writer = tantivy_index.writer(100_000_000).unwrap();
 
         const PAGE_1: u64 = 2;
@@ -238,7 +238,7 @@ mod tests {
 
         let search_schema = SearchSchema::default();
         let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
-        Search::new(index, search_schema.clone()).unwrap()
+        Search::new(index, search_schema).unwrap()
     }
 
     #[test]
