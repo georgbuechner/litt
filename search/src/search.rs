@@ -1,7 +1,7 @@
 use std::collections::{HashMap, LinkedList};
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
-use tantivy::{DocAddress, IndexReader, ReloadPolicy, Score, SnippetGenerator, Snippet};
+use tantivy::{DocAddress, IndexReader, ReloadPolicy, Score, Snippet, SnippetGenerator};
 
 extern crate litt_index;
 use litt_index::index::Index;
@@ -12,27 +12,26 @@ use crate::Result;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SearchResult {
-    pub page: u32, 
-    segment_ord: u32, 
-    doc_id: u32
+    pub page: u32,
+    segment_ord: u32,
+    doc_id: u32,
 }
 
-impl  SearchResult {
+impl SearchResult {
     pub fn new(page: u32, segment_ord: u32, doc_id: u32) -> Result<Self> {
         Ok(Self {
             page,
             segment_ord,
-            doc_id
+            doc_id,
         })
     }
 }
 
 impl PartialEq for SearchResult {
     fn eq(&self, other: &Self) -> bool {
-        self.page == other.page 
+        self.page == other.page
     }
 }
-
 
 pub struct Search {
     index: Index,
@@ -42,7 +41,8 @@ pub struct Search {
 
 impl Search {
     pub fn new(index: Index, schema: SearchSchema) -> Result<Self> {
-        let reader = index.index()
+        let reader = index
+            .index()
             .reader_builder()
             .reload_policy(ReloadPolicy::OnCommit)
             .try_into()
@@ -100,12 +100,11 @@ impl Search {
         Ok(results)
     }
 
-    pub fn get_preview(
-        &self,
-        search_result: &SearchResult,
-        input: &str,
-    ) -> Result<String> {
-        println!("Calling `get_preview` for: query: {} and page: {}", input, search_result.page);
+    pub fn get_preview(&self, search_result: &SearchResult, input: &str) -> Result<String> {
+        println!(
+            "Calling `get_preview` for: query: {} and page: {}",
+            input, search_result.page
+        );
         // Prepare creating snippet.
         let searcher = self.reader.searcher();
         let query_parser = QueryParser::for_index(self.index.index(), self.schema.default_fields());
@@ -114,9 +113,10 @@ impl Search {
             .map_err(|e| SearchError(e.to_string()))?;
         let snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
             .map_err(|e| SearchError(e.to_string()))?;
-        let retrieved_doc = searcher.doc(DocAddress { 
-                segment_ord: (search_result.segment_ord), 
-                doc_id: (search_result.doc_id) 
+        let retrieved_doc = searcher
+            .doc(DocAddress {
+                segment_ord: (search_result.segment_ord),
+                doc_id: (search_result.doc_id),
             })
             .map_err(|e| SearchError(e.to_string()))?;
 

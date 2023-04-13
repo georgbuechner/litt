@@ -1,9 +1,5 @@
 use crate::LittIndexError::{
-    CreationError, 
-    OpenError, 
-    PdfParseError, 
-    PdfNotFoundError, 
-    WriteError
+    CreationError, OpenError, PdfNotFoundError, PdfParseError, WriteError,
 };
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;

@@ -32,7 +32,13 @@ fn test_index_and_search() {
             for search_result in pages {
                 let preview = search.get_preview(search_result, &searched_word).unwrap();
                 assert!(!preview.is_empty());
-                assert!(preview.to_lowercase().find(&searched_word.to_lowercase()).unwrap_or_default() > 0);
+                assert!(
+                    preview
+                        .to_lowercase()
+                        .find(&searched_word.to_lowercase())
+                        .unwrap_or_default()
+                        > 0
+                );
                 assert!(preview.find("**").unwrap_or_default() > 0);
             }
         }
