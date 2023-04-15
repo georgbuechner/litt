@@ -30,6 +30,8 @@ impl SearchResult {
 impl PartialEq for SearchResult {
     fn eq(&self, other: &Self) -> bool {
         self.page == other.page
+            && self.segment_ord == other.segment_ord
+            && self.doc_id == other.doc_id
     }
 }
 
