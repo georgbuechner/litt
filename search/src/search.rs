@@ -27,14 +27,6 @@ impl SearchResult {
     }
 }
 
-impl PartialEq for SearchResult {
-    fn eq(&self, other: &Self) -> bool {
-        self.page == other.page
-            && self.segment_ord == other.segment_ord
-            && self.doc_id == other.doc_id
-    }
-}
-
 pub struct Search {
     index: Index,
     reader: IndexReader,
@@ -81,19 +73,30 @@ impl Search {
                 .map_err(|e| SearchError(e.to_string()))?;
             let cur_title = retrieved_doc
                 .get_first(self.schema.title)
-                .expect("Fatal: Field \"title\" not found!")
+                .ok_or(SearchError(String::from(
+                    "Fatal: Field \"title\" not found!",
+                )))?
                 .as_text()
-                .unwrap();
+                .ok_or(SearchError(String::from(
+                    "Fatal: Field \"title\" could not be read as text!",
+                )))?;
             let cur_page = retrieved_doc
                 .get_first(self.schema.page)
-                .expect("Fatal: Field \"page\" not found!")
+                .ok_or(SearchError(String::from(
+                    "Fatal: Field \"page\" not found!",
+                )))?
                 .as_u64()
-                .expect("Fatal: Field \"page\" is not a number!");
-            let page: u32 = cur_page.try_into().unwrap_or_else(|_| {
-                panic!("Fatal: Field \"page\" ({}) is bigger than u32!", cur_page)
-            });
+                .ok_or(SearchError(String::from(
+                    "Fatal: Field \"page\" not a number!",
+                )))?;
+            let page: u32 = cur_page.try_into().map_err(|_| {
+                SearchError(format!(
+                    "Fatal: Field \"page\" ({}) is bigger than u32!",
+                    cur_page
+                ))
+            })?;
             let search_result = SearchResult::new(page, segment_ord, doc_id)
-                .map_err(|_e| SearchError(String::from("Failed creating search result!")))?;
+                .map_err(|e| SearchError(format!("Failed creating search result: {}", e)))?;
             results
                 .entry(cur_title.to_string())
                 .and_modify(|pages| pages.push_back(search_result))
@@ -103,10 +106,6 @@ impl Search {
     }
 
     pub fn get_preview(&self, search_result: &SearchResult, input: &str) -> Result<String> {
-        println!(
-            "Calling `get_preview` for: query: {} and page: {}",
-            input, search_result.page
-        );
         // Prepare creating snippet.
         let searcher = self.reader.searcher();
         let query_parser = QueryParser::for_index(self.index.index(), self.schema.default_fields());
@@ -125,10 +124,17 @@ impl Search {
         // Get text on given page
         let path = retrieved_doc
             .get_first(self.schema.path)
-            .expect("Fatal: Field \"path\" not found!")
+            .ok_or(SearchError(String::from(
+                "Fatal: Field \"path\" not found!",
+            )))?
             .as_text()
-            .unwrap();
-        let text = self.index.get_page_body(search_result.page, path).unwrap();
+            .ok_or(SearchError(String::from(
+                "Fatal: Field \"path\" could not be read as text!",
+            )))?;
+        let text = self
+            .index
+            .get_page_body(search_result.page, path)
+            .map_err(|e| SearchError(e.to_string()))?;
 
         // Generate snippet
         let snippet = snippet_generator.snippet(&text);
@@ -180,6 +186,14 @@ mod tests {
         fresh and green with every spring, carrying in their lower leaf junctures the \
         debris of the winter’s flooding; and sycamores with mottled, white, recumbent \
         limbs and branches that arch over the pool";
+
+    impl PartialEq for SearchResult {
+        fn eq(&self, other: &Self) -> bool {
+            self.page == other.page
+                && self.segment_ord == other.segment_ord
+                && self.doc_id == other.doc_id
+        }
+    }
 
     fn setup() {
         create_dir_all(TEST_DIR_NAME)
