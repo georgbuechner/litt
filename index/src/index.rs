@@ -120,36 +120,26 @@ impl Index {
         pdf_document: PdfDocument,
         path: String,
     ) -> Result<()> {
-        // Let's index one documents!
-        println!("Indexing document");
-        let mut tantivy_document = TantivyDocument::new();
         let title_option = path.strip_suffix(".pdf");
 
-        for (i, _) in pdf_document.page_iter().enumerate() {
+        for i in 0..pdf_document.get_pages().len() {
+            let mut tantivy_document = TantivyDocument::new();
             let page_number = i as u64 + 1;
-            for (field, entry) in self.schema.schema.fields() {
-                match entry.name() {
-                    "path" => tantivy_document.add_text(field, path.clone()),
-                    "title" => {
-                        if let Some(title) = title_option {
-                            tantivy_document.add_text(field, title)
-                        }
-                    }
-                    "page" => tantivy_document.add_u64(field, page_number),
-                    "body" => tantivy_document.add_text(
-                        field,
-                        pdf_document
-                            .extract_text(&[page_number as u32])
-                            .map_err(|e| PdfParseError(e.to_string()))?,
-                    ),
-                    _ => {}
-                }
+            let page_body = pdf_document
+                .extract_text(&[page_number as u32])
+                .map_err(|e| PdfParseError(e.to_string()))?;
+            tantivy_document.add_text(self.schema.path, path.clone());
+
+            if let Some(title) = title_option {
+                tantivy_document.add_text(self.schema.title, title)
             }
+            tantivy_document.add_u64(self.schema.page, page_number);
+            tantivy_document.add_text(self.schema.body, page_body);
+            index_writer
+                .add_document(tantivy_document)
+                .map_err(|e| WriteError(e.to_string()))?;
         }
 
-        index_writer
-            .add_document(tantivy_document)
-            .map_err(|e| WriteError(e.to_string()))?;
         Ok(())
     }
 }
