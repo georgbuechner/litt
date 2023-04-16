@@ -1,36 +1,52 @@
 use crate::LittIndexError::{
-    CreationError, OpenError, PdfNotFoundError, PdfParseError, WriteError,
+    CreationError, OpenError, PdfNotFoundError, PdfParseError, ReloadError, WriteError,
 };
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use lopdf::Document as PdfDocument;
+use std::fs::create_dir_all;
+use std::path::PathBuf;
+use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
-use tantivy::{Index as TantivyIndex, IndexWriter};
+use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
 use walkdir::{DirEntry, WalkDir};
 
+const INDEX_DIRECTORY_NAME: &str = ".litt-index";
+
 pub struct Index {
-    path: String,
+    documents_path: PathBuf,
     index: TantivyIndex,
+    reader: IndexReader,
     schema: SearchSchema,
 }
 
 impl Index {
     pub fn create(path: &str, schema: SearchSchema) -> Result<Self> {
-        let index = Self::create_index(path.to_string(), schema.schema.clone())?;
+        let documents_path = PathBuf::from(path);
+        let index_path = documents_path.join(INDEX_DIRECTORY_NAME);
+        create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
+        let index = Self::create_index(&index_path, schema.schema.clone())?;
+        let reader = Self::build_reader(&index)?;
         Ok(Self {
-            path: path.to_string(),
+            documents_path,
             index,
+            reader,
             schema,
         })
     }
 
     pub fn open_or_create(path: &str, schema: SearchSchema) -> Result<Self> {
-        let index = Self::create_index(path.to_string(), schema.schema.clone())
-            .unwrap_or(Self::open_index(path.to_string())?);
+        let documents_path = PathBuf::from(path);
+        let index_path = documents_path.join(INDEX_DIRECTORY_NAME);
+        create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
+        let index = Self::create_index(&index_path, schema.schema.clone())
+            .unwrap_or(Self::open_index(&index_path)?);
+        let reader = Self::build_reader(&index)?;
         // TODO make search schema parameter optional and load schema from existing index
         Ok(Self {
-            path: path.to_string(),
+            documents_path,
             index,
+            reader,
             schema,
         })
     }
@@ -70,27 +86,47 @@ impl Index {
         &self.index
     }
 
+    pub fn searcher(&self) -> Result<Searcher> {
+        self.reader
+            .reload()
+            .map_err(|e| ReloadError(e.to_string()))?;
+        Ok(self.reader.searcher())
+    }
+
+    pub fn query_parser(&self) -> QueryParser {
+        QueryParser::for_index(&self.index, self.schema.default_fields())
+    }
+
     pub fn schema(self) -> SearchSchema {
         self.schema
     }
 
     pub fn get_page_body(&self, page: u32, path: &str) -> Result<String> {
-        let doc = PdfDocument::load(format!("{}/{}", self.path, path))
-            .map_err(|_e| PdfNotFoundError(format!("{}/{}", self.path, path)))?;
+        let doc = PdfDocument::load(self.documents_path.join(path)).map_err(|_e| {
+            PdfNotFoundError(self.documents_path.join(path).to_string_lossy().to_string())
+        })?;
         let text = doc.extract_text(&[page]).unwrap();
         Ok(text)
     }
 
-    fn create_index(path: String, schema: Schema) -> Result<TantivyIndex> {
+    fn create_index(path: &PathBuf, schema: Schema) -> Result<TantivyIndex> {
         TantivyIndex::create_in_dir(path, schema).map_err(|e| CreationError(e.to_string()))
     }
 
-    fn open_index(path: String) -> Result<TantivyIndex> {
+    fn open_index(path: &PathBuf) -> Result<TantivyIndex> {
         TantivyIndex::open_in_dir(path).map_err(|e| OpenError(e.to_string()))
     }
 
+    fn build_reader(index: &TantivyIndex) -> Result<IndexReader> {
+        index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::OnCommit)
+            .try_into()
+            .map_err(|e| CreationError(e.to_string()))
+    }
+
     fn get_pdf_dir_entries(&self) -> Vec<DirEntry> {
-        let walk_dir = WalkDir::new(self.path.clone());
+        let walk_dir = WalkDir::new(&self.documents_path);
         walk_dir
             .follow_links(true)
             .into_iter()
@@ -158,7 +194,7 @@ mod tests {
     static SEARCH_SCHEMA: Lazy<SearchSchema> = Lazy::new(SearchSchema::default);
 
     fn setup() {
-        save_fake_pdf_document(TEST_DIR_NAME, TEST_FILE_PATH);
+        save_fake_pdf_document(TEST_DIR_NAME, TEST_FILE_PATH, vec!["Hello, world".into()]);
     }
 
     fn teardown() {
@@ -183,9 +219,8 @@ mod tests {
     fn test_create() {
         run_test(|| {
             let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
-
             assert_eq!(SEARCH_SCHEMA.clone().schema, index.schema.schema);
-            assert_eq!(TEST_DIR_NAME, index.path);
+            assert_eq!(PathBuf::from(TEST_DIR_NAME), index.documents_path);
         });
     }
 
@@ -198,7 +233,7 @@ mod tests {
             let opened_index = Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
 
             assert_eq!(SEARCH_SCHEMA.clone().schema, opened_index.schema.schema);
-            assert_eq!(TEST_DIR_NAME, opened_index.path);
+            assert_eq!(PathBuf::from(TEST_DIR_NAME), opened_index.documents_path);
         });
     }
 
