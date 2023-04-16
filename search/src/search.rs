@@ -11,6 +11,7 @@ use crate::LittSearchError::{InitError, SearchError};
 use crate::Result;
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct SearchResult {
     pub page: u32,
     segment_ord: u32,
@@ -186,14 +187,6 @@ mod tests {
         fresh and green with every spring, carrying in their lower leaf junctures the \
         debris of the winter’s flooding; and sycamores with mottled, white, recumbent \
         limbs and branches that arch over the pool";
-
-    impl PartialEq for SearchResult {
-        fn eq(&self, other: &Self) -> bool {
-            self.page == other.page
-                && self.segment_ord == other.segment_ord
-                && self.doc_id == other.doc_id
-        }
-    }
 
     fn setup() {
         create_dir_all(TEST_DIR_NAME)
