@@ -1,4 +1,6 @@
-use crate::LittIndexError::{CreationError, OpenError, PdfParseError, WriteError};
+use crate::LittIndexError::{
+    CreationError, OpenError, PdfNotFoundError, PdfParseError, WriteError,
+};
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use lopdf::Document as PdfDocument;
@@ -64,12 +66,19 @@ impl Index {
         Ok(())
     }
 
-    pub fn index(self) -> TantivyIndex {
-        self.index
+    pub fn index(&self) -> &TantivyIndex {
+        &self.index
     }
 
     pub fn schema(self) -> SearchSchema {
         self.schema
+    }
+
+    pub fn get_page_body(&self, page: u32, path: &str) -> Result<String> {
+        let doc = PdfDocument::load(format!("{}/{}", self.path, path))
+            .map_err(|_e| PdfNotFoundError(format!("{}/{}", self.path, path)))?;
+        let text = doc.extract_text(&[page]).unwrap();
+        Ok(text)
     }
 
     fn create_index(path: String, schema: Schema) -> Result<TantivyIndex> {

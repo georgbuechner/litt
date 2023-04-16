@@ -9,6 +9,7 @@ pub enum LittIndexError {
     OpenError(String),
     WriteError(String),
     PdfParseError(String),
+    PdfNotFoundError(String),
 }
 
 impl fmt::Display for LittIndexError {
@@ -18,6 +19,7 @@ impl fmt::Display for LittIndexError {
             LittIndexError::OpenError(s) => write!(f, "Error opening existing index: {}", s),
             LittIndexError::WriteError(s) => write!(f, "Index Write Error: {}", s),
             LittIndexError::PdfParseError(s) => write!(f, "Error parsing PDF: {}", s),
+            LittIndexError::PdfNotFoundError(s) => write!(f, "PDF Not found: {}", s),
         }
     }
 }

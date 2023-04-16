@@ -1,12 +1,32 @@
 use std::collections::{HashMap, LinkedList};
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
-use tantivy::{DocAddress, Index, IndexReader, ReloadPolicy, Score};
+use tantivy::{DocAddress, IndexReader, ReloadPolicy, Score, Snippet, SnippetGenerator};
 
+extern crate litt_index;
+use litt_index::index::Index;
 use litt_shared::search_schema::SearchSchema;
 
 use crate::LittSearchError::{InitError, SearchError};
 use crate::Result;
+
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(test, derive(PartialEq))]
+pub struct SearchResult {
+    pub page: u32,
+    segment_ord: u32,
+    doc_id: u32,
+}
+
+impl SearchResult {
+    pub fn new(page: u32, segment_ord: u32, doc_id: u32) -> Result<Self> {
+        Ok(Self {
+            page,
+            segment_ord,
+            doc_id,
+        })
+    }
+}
 
 pub struct Search {
     index: Index,
@@ -17,6 +37,7 @@ pub struct Search {
 impl Search {
     pub fn new(index: Index, schema: SearchSchema) -> Result<Self> {
         let reader = index
+            .index()
             .reader_builder()
             .reload_policy(ReloadPolicy::OnCommit)
             .try_into()
@@ -28,13 +49,10 @@ impl Search {
         })
     }
 
-    pub fn search(&self, input: &str) -> Result<HashMap<String, LinkedList<u32>>> {
+    pub fn search(&self, input: &str) -> Result<HashMap<String, LinkedList<SearchResult>>> {
         let searcher = self.reader.searcher();
-        let query_parser = QueryParser::for_index(&self.index, self.schema.default_fields());
+        let query_parser = QueryParser::for_index(self.index.index(), self.schema.default_fields());
 
-        // QueryParser may fail if the query is not in the right
-        // format. For user facing applications, this can be a problem.
-        // A ticket has been opened regarding this problem.
         let query = query_parser
             .parse_query(input)
             .map_err(|e| SearchError(e.to_string()))?;
@@ -46,74 +64,105 @@ impl Search {
             .map_err(|e| SearchError(e.to_string()))?;
 
         // Assemble results
-        let mut results: HashMap<String, LinkedList<u32>> = HashMap::new();
+        let mut results: HashMap<String, LinkedList<SearchResult>> = HashMap::new();
         for (_score, doc_address) in top_docs {
+            let segment_ord = doc_address.segment_ord;
+            let doc_id = doc_address.doc_id;
             // Retrieve the actual content of documents given its `doc_address`.
             let retrieved_doc = searcher
                 .doc(doc_address)
                 .map_err(|e| SearchError(e.to_string()))?;
             let cur_title = retrieved_doc
                 .get_first(self.schema.title)
-                .expect("Fatal: Field \"title\" not found!")
+                .ok_or(SearchError(String::from(
+                    "Fatal: Field \"title\" not found!",
+                )))?
                 .as_text()
-                .unwrap();
+                .ok_or(SearchError(String::from(
+                    "Fatal: Field \"title\" could not be read as text!",
+                )))?;
             let cur_page = retrieved_doc
                 .get_first(self.schema.page)
-                .expect("Fatal: Field \"page\" not found!")
+                .ok_or(SearchError(String::from(
+                    "Fatal: Field \"page\" not found!",
+                )))?
                 .as_u64()
-                .expect("Fatal: Field \"page\" is not a number!");
-            let page: u32 = cur_page.try_into().unwrap_or_else(|_| {
-                panic!("Fatal: Field \"page\" ({}) is bigger than u32!", cur_page)
-            });
+                .ok_or(SearchError(String::from(
+                    "Fatal: Field \"page\" not a number!",
+                )))?;
+            let page: u32 = cur_page.try_into().map_err(|_| {
+                SearchError(format!(
+                    "Fatal: Field \"page\" ({}) is bigger than u32!",
+                    cur_page
+                ))
+            })?;
+            let search_result = SearchResult::new(page, segment_ord, doc_id)
+                .map_err(|e| SearchError(format!("Failed creating search result: {}", e)))?;
             results
                 .entry(cur_title.to_string())
-                .and_modify(|pages| pages.push_back(page))
-                .or_insert_with(|| LinkedList::from([page]));
+                .and_modify(|pages| pages.push_back(search_result))
+                .or_insert_with(|| LinkedList::from([search_result]));
         }
         Ok(results)
     }
 
-    pub fn get_preview(&self, text: String, phrase: &String) -> Result<String> {
-        let p_index = text
-            .to_lowercase()
-            .find(&(phrase.to_lowercase()))
-            .expect("Searched word not found on page!");
-        let text = format!(
-            "{}**{}**{}",
-            &text[0..p_index],
-            &text[p_index..p_index + phrase.len()],
-            &text[p_index + phrase.len()..]
-        );
-        let start = if p_index > 50 { p_index - 50 } else { 0 };
-        let end = if (p_index + phrase.len() + 50) < text.len() {
-            p_index + phrase.len() + 50
-        } else {
-            text.len()
-        };
-        let preview = &text[start..end];
-        Ok(format!("...{}...", preview))
+    pub fn get_preview(&self, search_result: &SearchResult, input: &str) -> Result<String> {
+        // Prepare creating snippet.
+        let searcher = self.reader.searcher();
+        let query_parser = QueryParser::for_index(self.index.index(), self.schema.default_fields());
+        let query = query_parser
+            .parse_query(input)
+            .map_err(|e| SearchError(e.to_string()))?;
+        let snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
+            .map_err(|e| SearchError(e.to_string()))?;
+        let retrieved_doc = searcher
+            .doc(DocAddress {
+                segment_ord: (search_result.segment_ord),
+                doc_id: (search_result.doc_id),
+            })
+            .map_err(|e| SearchError(e.to_string()))?;
+
+        // Get text on given page
+        let path = retrieved_doc
+            .get_first(self.schema.path)
+            .ok_or(SearchError(String::from(
+                "Fatal: Field \"path\" not found!",
+            )))?
+            .as_text()
+            .ok_or(SearchError(String::from(
+                "Fatal: Field \"path\" could not be read as text!",
+            )))?;
+        let text = self
+            .index
+            .get_page_body(search_result.page, path)
+            .map_err(|e| SearchError(e.to_string()))?;
+
+        // Generate snippet
+        let snippet = snippet_generator.snippet(&text);
+        // let snippet = snippet_generator.snippet_from_doc(&retrieved_doc);
+        Ok(self.highlight(snippet))
     }
 
-    pub fn get_preview_on_page(_text: String, _input: &str) -> Result<HashMap<String, String>> {
-        let previews: HashMap<String, String> = HashMap::new();
-        Ok(previews)
-    }
+    fn highlight(&self, snippet: Snippet) -> String {
+        let mut result = String::new();
+        let mut start_from = 0;
 
-    pub fn get_previews(
-        &self,
-        _path: &str,
-        _pages: LinkedList<u32>,
-        _input: &str,
-    ) -> Result<HashMap<u32, HashMap<String, String>>> {
-        let previews: HashMap<u32, HashMap<String, String>> = HashMap::new();
-        Ok(previews)
+        for fragment_range in snippet.highlighted() {
+            result.push_str(&snippet.fragment()[start_from..fragment_range.start]);
+            result.push_str(" **");
+            result.push_str(&snippet.fragment()[fragment_range.clone()]);
+            result.push_str("** ");
+            start_from = fragment_range.end;
+        }
+
+        result.push_str(&snippet.fragment()[start_from..]);
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::LinkedList,
         fs::{create_dir_all, remove_dir_all},
         panic,
     };
@@ -121,7 +170,6 @@ mod tests {
     use tantivy::{
         doc,
         schema::{Schema, STORED, TEXT},
-        Index,
     };
 
     use super::*;
@@ -173,8 +221,8 @@ mod tests {
 
         // Indexing documents
         let index_path = String::from(TEST_DIR_NAME);
-        let index = Index::create_in_dir(index_path, schema.clone()).unwrap();
-        let mut index_writer = index.writer(100_000_000).unwrap();
+        let tantivy_index = tantivy::Index::create_in_dir(index_path, schema).unwrap();
+        let mut index_writer = tantivy_index.writer(100_000_000).unwrap();
 
         const PAGE_1: u64 = 2;
         index_writer
@@ -190,14 +238,16 @@ mod tests {
         index_writer
             .add_document(doc!(
                 title => TEST_DOC_NAME,
+                path => TEST_FILE_PATH,
                 page => PAGE_2,
                 body => BODY_2
             ))
             .unwrap();
         index_writer.commit().unwrap();
 
-        let search_scheama = SearchSchema::new(title, path, page, body, schema);
-        Search::new(index, search_scheama).unwrap()
+        let search_schema = SearchSchema::default();
+        let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
+        Search::new(index, search_schema).unwrap()
     }
 
     #[test]
@@ -205,7 +255,6 @@ mod tests {
         run_test(|| {
             let search = create_searcher();
             test_normal_search(&search);
-            test_preview(&search);
         })
     }
 
@@ -214,7 +263,7 @@ mod tests {
         let results = search.search(&String::from("flooding")).unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap(), &LinkedList::from([2]));
+        assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
 
         // one-word search returning 1 result with two pages
         let results = search.search(&String::from("the")).unwrap();
@@ -234,14 +283,14 @@ mod tests {
         let results = search.search(&String::from("river AND flooding")).unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap(), &LinkedList::from([2]));
+        assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
 
         let results = search
             .search(&String::from("(river OR valley) AND flooding"))
             .unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap(), &LinkedList::from([2]));
+        assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
 
         // Cannot find part of words like 'lley si' for 'valley side'
         let results = search.search(&String::from("lley si'")).unwrap();
@@ -251,7 +300,7 @@ mod tests {
         let results = search.search(&String::from("CARRYING")).unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap(), &LinkedList::from([2]));
+        assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
 
         // Phrase query should not be found (since only "limbs and branches" exists)
         let results = search.search(&String::from("\"limbs branches\"")).unwrap();
@@ -262,19 +311,5 @@ mod tests {
             .search(&String::from("\"limbs branches\"~1"))
             .unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
-    }
-
-    fn test_preview(search: &Search) {
-        let word = String::from("river");
-        let preview = search.get_preview(BODY_1.to_string(), &word).unwrap();
-        println!("{}: {}", preview, preview.len());
-        assert!(preview.len() > word.len() && preview.len() < 110 + word.len());
-        assert!(preview.to_lowercase().contains(&word.to_lowercase()));
-
-        let word = String::from("deep and green");
-        let preview = search.get_preview(BODY_1.to_string(), &word).unwrap();
-        println!("{}: {}", preview, preview.len());
-        assert!(preview.len() > word.len() && preview.len() < 110 + word.len());
-        assert!(preview.to_lowercase().contains(&word.to_lowercase()));
     }
 }
