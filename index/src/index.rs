@@ -5,7 +5,7 @@ use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use lopdf::Document as PdfDocument;
 use std::fs::create_dir_all;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
@@ -21,8 +21,8 @@ pub struct Index {
 }
 
 impl Index {
-    pub fn create(path: &str, schema: SearchSchema) -> Result<Self> {
-        let documents_path = PathBuf::from(path);
+    pub fn create<P: AsRef<Path>>(path: P, schema: SearchSchema) -> Result<Self> {
+        let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path.join(INDEX_DIRECTORY_NAME);
         create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
         let index = Self::create_index(&index_path, schema.schema.clone())?;
@@ -35,8 +35,8 @@ impl Index {
         })
     }
 
-    pub fn open_or_create(path: &str, schema: SearchSchema) -> Result<Self> {
-        let documents_path = PathBuf::from(path);
+    pub fn open_or_create<P: AsRef<Path>>(path: P, schema: SearchSchema) -> Result<Self> {
+        let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path.join(INDEX_DIRECTORY_NAME);
         create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
         let index = Self::create_index(&index_path, schema.schema.clone())
