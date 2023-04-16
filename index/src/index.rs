@@ -101,8 +101,8 @@ impl Index {
         self.schema
     }
 
-    pub fn get_page_body(&self, page: u32, path: &str) -> Result<String> {
-        let doc = PdfDocument::load(self.documents_path.join(path)).map_err(|_e| {
+    pub fn get_page_body(&self, page: u32, path: impl AsRef<Path>) -> Result<String> {
+        let doc = PdfDocument::load(self.documents_path.join(path.as_ref())).map_err(|_e| {
             PdfNotFoundError(self.documents_path.join(path).to_string_lossy().to_string())
         })?;
         let text = doc.extract_text(&[page]).unwrap();
