@@ -21,7 +21,7 @@ pub struct Index {
 }
 
 impl Index {
-    pub fn create<P: AsRef<Path>>(path: P, schema: SearchSchema) -> Result<Self> {
+    pub fn create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path.join(INDEX_DIRECTORY_NAME);
         create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
@@ -35,7 +35,7 @@ impl Index {
         })
     }
 
-    pub fn open_or_create<P: AsRef<Path>>(path: P, schema: SearchSchema) -> Result<Self> {
+    pub fn open_or_create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path.join(INDEX_DIRECTORY_NAME);
         create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
