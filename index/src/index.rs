@@ -3,7 +3,9 @@ use crate::LittIndexError::{
 };
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
+use litt_shared::LITT_DIRECTORY_NAME;
 use lopdf::Document as PdfDocument;
+use std::convert::AsRef;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use tantivy::query::QueryParser;
@@ -11,7 +13,7 @@ use tantivy::schema::{Document as TantivyDocument, Schema};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
 use walkdir::{DirEntry, WalkDir};
 
-const INDEX_DIRECTORY_NAME: &str = ".litt-index";
+const INDEX_DIRECTORY_NAME: &str = "index";
 
 pub struct Index {
     documents_path: PathBuf,
@@ -23,7 +25,9 @@ pub struct Index {
 impl Index {
     pub fn create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
         let documents_path = PathBuf::from(path.as_ref());
-        let index_path = documents_path.join(INDEX_DIRECTORY_NAME);
+        let index_path = documents_path
+            .join(LITT_DIRECTORY_NAME)
+            .join(INDEX_DIRECTORY_NAME);
         create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
         let index = Self::create_index(&index_path, schema.schema.clone())?;
         let reader = Self::build_reader(&index)?;
@@ -234,6 +238,10 @@ mod tests {
 
             assert_eq!(SEARCH_SCHEMA.clone().schema, opened_index.schema.schema);
             assert_eq!(PathBuf::from(TEST_DIR_NAME), opened_index.documents_path);
+            assert!(Path::new(TEST_DIR_NAME)
+                .join(LITT_DIRECTORY_NAME)
+                .join(INDEX_DIRECTORY_NAME)
+                .is_dir())
         });
     }
 
