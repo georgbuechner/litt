@@ -55,8 +55,8 @@ impl Index {
         })
     }
 
-    /// Add all PDF documents in located in the path this index was created for (see [new()](Self::create)).
-    pub fn add_all_documents(&self) -> Result<()> {
+    /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
+    pub fn add_all_pdf_documents(&self) -> Result<()> {
         let mut index_writer = self
             .index
             .writer(100_000_000)
@@ -70,7 +70,7 @@ impl Index {
                     eprintln!("Error reading document ({}): {}", path, e)
                 }
                 Ok(pdf_document) => {
-                    self.add_document(&mut index_writer, pdf_document, path)?;
+                    self.add_pdf_document_pages(&mut index_writer, pdf_document, path)?;
                 }
             }
         }
@@ -83,18 +83,16 @@ impl Index {
         index_writer
             .commit()
             .map_err(|e| WriteError(e.to_string()))?;
-        Ok(())
+
+        self.reader.reload().map_err(|e| ReloadError(e.to_string()))
     }
 
     pub fn index(&self) -> &TantivyIndex {
         &self.index
     }
 
-    pub fn searcher(&self) -> Result<Searcher> {
-        self.reader
-            .reload()
-            .map_err(|e| ReloadError(e.to_string()))?;
-        Ok(self.reader.searcher())
+    pub fn searcher(&self) -> Searcher {
+        self.reader.searcher()
     }
 
     pub fn query_parser(&self) -> QueryParser {
@@ -124,7 +122,7 @@ impl Index {
     fn build_reader(index: &TantivyIndex) -> Result<IndexReader> {
         index
             .reader_builder()
-            .reload_policy(ReloadPolicy::OnCommit)
+            .reload_policy(ReloadPolicy::Manual)
             .try_into()
             .map_err(|e| CreationError(e.to_string()))
     }
@@ -154,7 +152,8 @@ impl Index {
         pdf_paths_with_document_results
     }
 
-    fn add_document(
+    /// Add a tantivy document to the index for each page of the pdf document.
+    fn add_pdf_document_pages(
         &self,
         index_writer: &mut IndexWriter,
         pdf_document: PdfDocument,
@@ -179,7 +178,6 @@ impl Index {
                 .add_document(tantivy_document)
                 .map_err(|e| WriteError(e.to_string()))?;
         }
-
         Ok(())
     }
 }
@@ -263,7 +261,7 @@ mod tests {
     fn test_add_all_documents() {
         run_test(|| {
             let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
-            index.add_all_documents().unwrap();
+            index.add_all_pdf_documents().unwrap();
             let segments = index.index.searchable_segments().unwrap();
             assert_eq!(1, segments.len());
         });
