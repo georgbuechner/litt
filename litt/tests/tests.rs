@@ -21,7 +21,7 @@ fn test_index_and_search() {
         // # Searching
 
         // init search
-        let search = Search::new(index, search_schema).unwrap();
+        let search = Search::new(index, search_schema);
 
         // do seach: expect 1 results
         let searched_word = String::from("Hello");

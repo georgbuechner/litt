@@ -18,12 +18,12 @@ pub struct SearchResult {
 }
 
 impl SearchResult {
-    pub fn new(page: u32, segment_ord: u32, doc_id: u32) -> Result<Self> {
-        Ok(Self {
+    pub fn new(page: u32, segment_ord: u32, doc_id: u32) -> Self {
+        Self {
             page,
             segment_ord,
             doc_id,
-        })
+        }
     }
 }
 
@@ -33,8 +33,8 @@ pub struct Search {
 }
 
 impl Search {
-    pub fn new(index: Index, schema: SearchSchema) -> Result<Self> {
-        Ok(Self { index, schema })
+    pub fn new(index: Index, schema: SearchSchema) -> Self {
+        Self { index, schema }
     }
 
     pub fn search(&self, input: &str) -> Result<HashMap<String, LinkedList<SearchResult>>> {
@@ -84,8 +84,7 @@ impl Search {
                     cur_page
                 ))
             })?;
-            let search_result = SearchResult::new(page, segment_ord, doc_id)
-                .map_err(|e| SearchError(format!("Failed creating search result: {}", e)))?;
+            let search_result = SearchResult::new(page, segment_ord, doc_id);
             results
                 .entry(cur_title.to_string())
                 .and_modify(|pages| pages.push_back(search_result))
@@ -199,7 +198,7 @@ mod tests {
         let search_schema = SearchSchema::default();
         let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
         index.add_all_pdf_documents().unwrap();
-        Search::new(index, search_schema).unwrap()
+        Search::new(index, search_schema)
     }
 
     #[test]
