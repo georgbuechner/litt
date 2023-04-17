@@ -49,7 +49,7 @@ fn test_index_and_search() {
 }
 
 fn setup() {
-    save_fake_pdf_document(TEST_DIR_NAME, TEST_FILE_PATH);
+    save_fake_pdf_document(TEST_DIR_NAME, TEST_FILE_PATH, vec!["Hello, world".into()]);
 }
 
 fn teardown() {

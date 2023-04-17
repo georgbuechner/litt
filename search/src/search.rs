@@ -1,13 +1,12 @@
 use std::collections::{HashMap, LinkedList};
 use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
-use tantivy::{DocAddress, IndexReader, ReloadPolicy, Score, Snippet, SnippetGenerator};
+use tantivy::{DocAddress, Score, Snippet, SnippetGenerator};
 
 extern crate litt_index;
 use litt_index::index::Index;
 use litt_shared::search_schema::SearchSchema;
 
-use crate::LittSearchError::{InitError, SearchError};
+use crate::LittSearchError::SearchError;
 use crate::Result;
 
 #[derive(Debug, Clone, Copy)]
@@ -30,28 +29,20 @@ impl SearchResult {
 
 pub struct Search {
     index: Index,
-    reader: IndexReader,
     schema: SearchSchema,
 }
 
 impl Search {
     pub fn new(index: Index, schema: SearchSchema) -> Result<Self> {
-        let reader = index
-            .index()
-            .reader_builder()
-            .reload_policy(ReloadPolicy::OnCommit)
-            .try_into()
-            .map_err(|e| InitError(e.to_string()))?;
-        Ok(Self {
-            index,
-            reader,
-            schema,
-        })
+        Ok(Self { index, schema })
     }
 
     pub fn search(&self, input: &str) -> Result<HashMap<String, LinkedList<SearchResult>>> {
-        let searcher = self.reader.searcher();
-        let query_parser = QueryParser::for_index(self.index.index(), self.schema.default_fields());
+        let searcher = self
+            .index
+            .searcher()
+            .map_err(|e| SearchError(e.to_string()))?;
+        let query_parser = self.index.query_parser();
 
         let query = query_parser
             .parse_query(input)
@@ -108,8 +99,11 @@ impl Search {
 
     pub fn get_preview(&self, search_result: &SearchResult, input: &str) -> Result<String> {
         // Prepare creating snippet.
-        let searcher = self.reader.searcher();
-        let query_parser = QueryParser::for_index(self.index.index(), self.schema.default_fields());
+        let searcher = self
+            .index
+            .searcher()
+            .map_err(|e| SearchError(e.to_string()))?;
+        let query_parser = self.index.query_parser();
         let query = query_parser
             .parse_query(input)
             .map_err(|e| SearchError(e.to_string()))?;
@@ -162,19 +156,13 @@ impl Search {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs::{create_dir_all, remove_dir_all},
-        panic,
-    };
+    use std::panic;
 
-    use tantivy::{
-        doc,
-        schema::{Schema, STORED, TEXT},
-    };
+    use litt_shared::test_helpers::{cleanup_dir_and_file, save_fake_pdf_document};
 
     use super::*;
     const TEST_DIR_NAME: &str = "resources";
-    const TEST_DOC_NAME: &str = "Of Mice and Men";
+    const TEST_DOC_NAME: &str = "test";
     const TEST_FILE_PATH: &str = "test.pdf";
     const BODY_1: &str =
         "A few miles south of Soledad, the Salinas River drops in close to the hillside \
@@ -189,13 +177,15 @@ mod tests {
         limbs and branches that arch over the pool";
 
     fn setup() {
-        create_dir_all(TEST_DIR_NAME)
-            .unwrap_or_else(|_| panic!("Failed to create directory: {}", TEST_DIR_NAME));
+        save_fake_pdf_document(
+            TEST_DIR_NAME,
+            TEST_FILE_PATH,
+            vec![BODY_1.into(), BODY_2.into()],
+        )
     }
 
     fn teardown() {
-        remove_dir_all(TEST_DIR_NAME)
-            .unwrap_or_else(|_| panic!("Failed to remove directory: {}", TEST_DIR_NAME));
+        cleanup_dir_and_file(TEST_DIR_NAME, TEST_FILE_PATH);
     }
 
     fn run_test<T>(test: T)
@@ -212,41 +202,9 @@ mod tests {
     }
 
     fn create_searcher() -> Search {
-        let mut schema_builder = Schema::builder();
-        let title = schema_builder.add_text_field("title", TEXT | STORED);
-        let path = schema_builder.add_text_field("path", TEXT | STORED);
-        let page = schema_builder.add_u64_field("page", STORED);
-        let body = schema_builder.add_text_field("body", TEXT);
-        let schema = schema_builder.build();
-
-        // Indexing documents
-        let index_path = String::from(TEST_DIR_NAME);
-        let tantivy_index = tantivy::Index::create_in_dir(index_path, schema).unwrap();
-        let mut index_writer = tantivy_index.writer(100_000_000).unwrap();
-
-        const PAGE_1: u64 = 2;
-        index_writer
-            .add_document(doc!(
-                title => TEST_DOC_NAME,
-                path => TEST_FILE_PATH,
-                page => PAGE_1,
-                body => BODY_1
-            ))
-            .unwrap();
-
-        const PAGE_2: u64 = 2;
-        index_writer
-            .add_document(doc!(
-                title => TEST_DOC_NAME,
-                path => TEST_FILE_PATH,
-                page => PAGE_2,
-                body => BODY_2
-            ))
-            .unwrap();
-        index_writer.commit().unwrap();
-
         let search_schema = SearchSchema::default();
         let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
+        index.add_all_documents().unwrap();
         Search::new(index, search_schema).unwrap()
     }
 
@@ -262,8 +220,9 @@ mod tests {
         // one-word search returning 1 result with 1 page
         let results = search.search(&String::from("flooding")).unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
+        assert_eq!(1, results.get(TEST_DOC_NAME).unwrap().len());
+        let first_result = results.get(TEST_DOC_NAME).unwrap().front().unwrap();
+        assert_eq!(2, first_result.page);
 
         // one-word search returning 1 result with two pages
         let results = search.search(&String::from("the")).unwrap();
