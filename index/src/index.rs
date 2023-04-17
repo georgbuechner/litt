@@ -87,9 +87,6 @@ impl Index {
         self.reader.reload().map_err(|e| ReloadError(e.to_string()))
     }
 
-    pub fn index(&self) -> &TantivyIndex {
-        &self.index
-    }
 
     pub fn searcher(&self) -> Searcher {
         self.reader.searcher()
@@ -99,9 +96,6 @@ impl Index {
         QueryParser::for_index(&self.index, self.schema.default_fields())
     }
 
-    pub fn schema(self) -> SearchSchema {
-        self.schema
-    }
 
     pub fn get_page_body(&self, page: u32, path: impl AsRef<Path>) -> Result<String> {
         let doc = PdfDocument::load(self.documents_path.join(path.as_ref())).map_err(|_e| {
