@@ -1,28 +1,8 @@
 use clap::Parser;
-
-/// Literature tool for searching pdfs in a directory (litt-index).
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-    /// the litt index to open
-    #[arg()]
-    litt_index: String,
-
-    /// the search term (optional, if not specified starts interactive search)
-    #[arg(default_value_t = String::from(""))]
-    term: String,
-
-    /// create new litt-index at path
-    #[arg(short, long, value_name = "PATH", default_value_t = String::from(""))]
-    init: String,
-
-    /// updates an existing litt-index
-    #[arg(short, long, default_value_t = false)]
-    update: bool,
-}
+mod cli;
 
 fn main() {
-    let args = Cli::parse();
+    let args = cli::Cli::parse();
 
     // TODO (fux): in case of missing index name, all indices should be listed.
     // Find a way to do that since clap automatically generates a (pretty good)
@@ -41,10 +21,4 @@ fn main() {
     } else {
         println!("Starting interactive search for \"{}\".", args.litt_index);
     }
-}
-
-#[test]
-fn verify_cli() {
-    use clap::CommandFactory;
-    Cli::command().debug_assert()
 }
