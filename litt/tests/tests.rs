@@ -16,12 +16,12 @@ fn test_index_and_search() {
         let search_schema = SearchSchema::default();
 
         let index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
-        index.add_all_documents().unwrap();
+        index.add_all_pdf_documents().unwrap();
 
         // # Searching
 
         // init search
-        let search = Search::new(index, search_schema).unwrap();
+        let search = Search::new(index, search_schema);
 
         // do seach: expect 1 results
         let searched_word = String::from("Hello");
