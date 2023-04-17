@@ -38,10 +38,7 @@ impl Search {
     }
 
     pub fn search(&self, input: &str) -> Result<HashMap<String, LinkedList<SearchResult>>> {
-        let searcher = self
-            .index
-            .searcher()
-            .map_err(|e| SearchError(e.to_string()))?;
+        let searcher = self.index.searcher();
         let query_parser = self.index.query_parser();
 
         let query = query_parser
@@ -99,10 +96,7 @@ impl Search {
 
     pub fn get_preview(&self, search_result: &SearchResult, input: &str) -> Result<String> {
         // Prepare creating snippet.
-        let searcher = self
-            .index
-            .searcher()
-            .map_err(|e| SearchError(e.to_string()))?;
+        let searcher = self.index.searcher();
         let query_parser = self.index.query_parser();
         let query = query_parser
             .parse_query(input)

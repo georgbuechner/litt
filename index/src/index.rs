@@ -83,18 +83,16 @@ impl Index {
         index_writer
             .commit()
             .map_err(|e| WriteError(e.to_string()))?;
-        Ok(())
+
+        self.reader.reload().map_err(|e| ReloadError(e.to_string()))
     }
 
     pub fn index(&self) -> &TantivyIndex {
         &self.index
     }
 
-    pub fn searcher(&self) -> Result<Searcher> {
-        self.reader
-            .reload()
-            .map_err(|e| ReloadError(e.to_string()))?;
-        Ok(self.reader.searcher())
+    pub fn searcher(&self) -> Searcher {
+        self.reader.searcher()
     }
 
     pub fn query_parser(&self) -> QueryParser {
@@ -124,7 +122,7 @@ impl Index {
     fn build_reader(index: &TantivyIndex) -> Result<IndexReader> {
         index
             .reader_builder()
-            .reload_policy(ReloadPolicy::OnCommit)
+            .reload_policy(ReloadPolicy::Manual)
             .try_into()
             .map_err(|e| CreationError(e.to_string()))
     }
