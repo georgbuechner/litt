@@ -5,7 +5,7 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     /// the litt index to open
-    #[arg()]
+    #[arg(default_value_t = String::from(""))]
     pub litt_index: String,
 
     /// the search term (optional, if not specified starts interactive search)
@@ -19,10 +19,15 @@ pub struct Cli {
     /// updates an existing litt-index
     #[arg(short, long, default_value_t = false)]
     pub update: bool,
+    
+    /// shows all existing indices
+    #[arg(short, long, default_value_t = false)]
+    pub list: bool,
 }
 
 #[test]
 fn verify_cli() {
     use clap::CommandFactory;
     Cli::command().debug_assert()
+
 }
