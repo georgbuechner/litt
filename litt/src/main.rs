@@ -39,10 +39,7 @@ fn main() -> Result<(), LittError> {
         if !cli.init.is_empty() {
             println!("Creating new index at: {}.", cli.init);
             if index_tracker.exists(&cli.init) {
-                println!("Failed to create new index since a index at this path already exists: name: \"{}\", path: \"{}\"", 
-                         index_tracker.get_name(&cli.init), 
-                         cli.init);
-
+                println!("Failed to create new index since a index at this path already exists: name: \"{}\", path: \"{}\"", index_tracker.get_name(&cli.init), cli.init);
                 // TODO (fux): return error instead.
                 return Ok(());
             }
