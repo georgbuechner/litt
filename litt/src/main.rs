@@ -20,6 +20,9 @@ fn main() -> Result<(), LittError> {
 
     let index_tracker = IndexTracker::create(".litt".into());
 
+    // everything that does not require litt index
+    //
+    // Print existing litt indices
     if cli.list {
         println!("Currently availible indices:");
         for index in index_tracker.all() { 
@@ -28,27 +31,46 @@ fn main() -> Result<(), LittError> {
         return Ok(())
     }
 
-    if cli.litt_index == "" {
+    // check if name of litt index was given by user
+    if let None = cli.litt_index {
         cli::Cli::command().print_help().unwrap();
         return Err(LittError("Litt index missing!".into()));
     }
-
-    if !cli.init.is_empty() {
-        let index = Index::create(
-            IndexTracker::get_path(index_tracker, cli.litt_index)
+    else if let Some(index_name) = cli.litt_index {
+        // initialize new index
+        if !cli.init.is_empty() {
+            let _index = Index::create(
+                index_tracker.get_path(&index_name),
+                SearchSchema::default()
+            );
+            println!(
+                "Creating new index \"{}\" at: {}.",
+                index_name, cli.init
+            );
+            return Ok(())
+        } 
+        
+        // index
+        let index = Index::open_or_create(
+            index_tracker.get_path(&index_name),
             SearchSchema::default()
-        );
-        in
-        println!(
-            "Creating new index \"{}\" at: {}.",
-            cli.litt_index, cli.init
-        );
-    } else if cli.update {
-        println!("Updating index \"{}\".", cli.litt_index);
-    } else if !cli.term.is_empty() {
-        println!("Search index \"{}\" for {}", cli.litt_index, cli.term);
-    } else {
-        println!("Starting interactive search for \"{}\".", cli.litt_index);
+        ).map_err(|e| LittError(e.to_string()))?;
+
+        // update existing index
+        if cli.update {
+            // TODO (fux): implement update
+            println!("Updating index \"{}\".", index_name);
+            return Ok(())
+        } 
+        // do normal search
+        else if !cli.term.is_empty() {
+            let _search = Search::new(index, SearchSchema::default());
+            println!("Search index \"{}\" for {}", index_name, cli.term);
+        } 
+        // do interactive search
+        else {
+            println!("Starting interactive search for \"{}\".", index_name);
+        }
     }
 
     Ok(())

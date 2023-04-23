@@ -5,8 +5,8 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     /// the litt index to open
-    #[arg(default_value_t = String::from(""))]
-    pub litt_index: String,
+    #[arg()]
+    pub litt_index: Option<String>,
 
     /// the search term (optional, if not specified starts interactive search)
     #[arg(default_value_t = String::from(""))]

@@ -13,18 +13,17 @@ impl IndexTracker  {
         Self { indecis }
     }
 
-    pub fn exists(name: String) -> bool {
+    pub fn exists(self, name: String) -> bool {
         true
     }
 
-    pub fn add(name: String, path: PathBuf) {
+    pub fn add(self, name: String, path: PathBuf) {
         ()
     }
 
-    pub fn get_path(name: String) -> PathBuf {
+    pub fn get_path(self, name: &String) -> PathBuf {
         let index_path = PathBuf::from(name);
         index_path
-
     }
 
     pub fn all(self) -> HashMap<String, PathBuf> {
