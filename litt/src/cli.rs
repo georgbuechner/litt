@@ -19,7 +19,7 @@ pub struct Cli {
     /// updates an existing litt-index
     #[arg(short, long, default_value_t = false)]
     pub update: bool,
-    
+
     /// shows all existing indices
     #[arg(short, long, default_value_t = false)]
     pub list: bool,
@@ -29,5 +29,4 @@ pub struct Cli {
 fn verify_cli() {
     use clap::CommandFactory;
     Cli::command().debug_assert()
-
 }
