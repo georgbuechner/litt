@@ -54,12 +54,9 @@ fn main() -> Result<(), LittError> {
         }
 
         // get index:
-        let index = Index::open_or_create(
-            index_tracker
-                .get_path(&index_name),
-            SearchSchema::default(),
-        )
-        .map_err(|e| LittError(e.to_string()))?;
+        let index =
+            Index::open_or_create(index_tracker.get_path(&index_name), SearchSchema::default())
+                .map_err(|e| LittError(e.to_string()))?;
 
         // update existing index
         if cli.update {
