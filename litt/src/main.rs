@@ -32,7 +32,9 @@ fn main() -> Result<(), LittError> {
 
     // check if name of litt index was given by user
     if cli.litt_index.is_none() {
-        Cli::command().print_help().unwrap();
+        Cli::command()
+            .print_help()
+            .map_err(|e| LittError(e.to_string()))?;
         return Err(LittError("Litt index missing!".into()));
     } else if let Some(index_name) = cli.litt_index {
         // initialize new index
@@ -54,10 +56,7 @@ fn main() -> Result<(), LittError> {
         // get index:
         let index = Index::open_or_create(
             index_tracker
-                .get_path(&index_name)
-                .as_path()
-                .to_str()
-                .unwrap(),
+                .get_path(&index_name),
             SearchSchema::default(),
         )
         .map_err(|e| LittError(e.to_string()))?;
