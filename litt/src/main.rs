@@ -23,7 +23,7 @@ fn main() -> Result<(), LittError> {
     //
     // Print existing litt indices
     if cli.list {
-        println!("Currently availible indices:");
+        println!("Currently available indices:");
         for index in index_tracker.all() {
             println!(" - {:?}", index);
         }
@@ -32,7 +32,7 @@ fn main() -> Result<(), LittError> {
 
     // check if name of litt index was given by user
     if cli.litt_index.is_none() {
-        cli::Cli::command().print_help().unwrap();
+        Cli::command().print_help().unwrap();
         return Err(LittError("Litt index missing!".into()));
     } else if let Some(index_name) = cli.litt_index {
         // initialize new index
