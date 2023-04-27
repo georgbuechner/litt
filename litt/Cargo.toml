@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 tantivy = { workspace = true }
 lopdf = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 litt_search = { path = "../search" }
 litt_shared = { path = "../shared" }
 litt_index = { path = "../index" }
