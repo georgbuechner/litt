@@ -94,9 +94,6 @@ impl Index {
         self.writer
             .delete_all_documents()
             .map_err(|e| UpdateError(e.to_string()))?;
-        self.writer
-            .commit()
-            .map_err(|e| UpdateError(e.to_string()))?;
         self.add_all_pdf_documents()
     }
 
