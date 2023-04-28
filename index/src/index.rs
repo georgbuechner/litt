@@ -1,5 +1,5 @@
 use crate::LittIndexError::{
-    CreationError, OpenError, PdfNotFoundError, PdfParseError, ReloadError, WriteError,
+    CreationError, OpenError, PdfNotFoundError, PdfParseError, ReloadError, UpdateError, WriteError,
 };
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
@@ -14,11 +14,14 @@ use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Sea
 use walkdir::{DirEntry, WalkDir};
 
 const INDEX_DIRECTORY_NAME: &str = "index";
+/// The total target memory usage that will be split between a given number of threads
+const TARGET_MEMORY_BYTES: usize = 100_000_000;
 
 pub struct Index {
     documents_path: PathBuf,
     index: TantivyIndex,
     reader: IndexReader,
+    writer: IndexWriter,
     schema: SearchSchema,
 }
 
@@ -31,10 +34,12 @@ impl Index {
         create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
         let index = Self::create_index(&index_path, schema.schema.clone())?;
         let reader = Self::build_reader(&index)?;
+        let writer = Self::build_writer(&index)?;
         Ok(Self {
             documents_path,
             index,
             reader,
+            writer,
             schema,
         })
     }
@@ -46,22 +51,19 @@ impl Index {
         let index = Self::create_index(&index_path, schema.schema.clone())
             .unwrap_or(Self::open_index(&index_path)?);
         let reader = Self::build_reader(&index)?;
+        let writer = Self::build_writer(&index)?;
         // TODO make search schema parameter optional and load schema from existing index
         Ok(Self {
             documents_path,
             index,
             reader,
+            writer,
             schema,
         })
     }
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
-    pub fn add_all_pdf_documents(&self) -> Result<()> {
-        let mut index_writer = self
-            .index
-            .writer(100_000_000)
-            .map_err(|e| WriteError(e.to_string()))?;
-
+    pub fn add_all_pdf_documents(&mut self) -> Result<()> {
         let pdf_paths_with_document_results = self.load_pdf_docs();
 
         for (path, pdf_document_result) in pdf_paths_with_document_results {
@@ -70,7 +72,7 @@ impl Index {
                     eprintln!("Error reading document ({}): {}", path, e)
                 }
                 Ok(pdf_document) => {
-                    self.add_pdf_document_pages(&mut index_writer, pdf_document, path)?;
+                    self.add_pdf_document_pages(&self.writer, pdf_document, path)?;
                 }
             }
         }
@@ -80,13 +82,23 @@ impl Index {
         // flush the current index to the disk, and advertise
         // the existence of new documents.
 
-        index_writer
+        self.writer
             .commit()
             .map_err(|e| WriteError(e.to_string()))?;
 
         self.reader.reload().map_err(|e| ReloadError(e.to_string()))
     }
 
+    /// For now, just delete existing index and index the documents again.
+    pub fn update(&mut self) -> Result<()> {
+        self.writer
+            .delete_all_documents()
+            .map_err(|e| UpdateError(e.to_string()))?;
+        self.writer
+            .commit()
+            .map_err(|e| UpdateError(e.to_string()))?;
+        self.add_all_pdf_documents()
+    }
 
     pub fn searcher(&self) -> Searcher {
         self.reader.searcher()
@@ -96,12 +108,13 @@ impl Index {
         QueryParser::for_index(&self.index, self.schema.default_fields())
     }
 
-
     pub fn get_page_body(&self, page: u32, path: impl AsRef<Path>) -> Result<String> {
         let doc = PdfDocument::load(self.documents_path.join(path.as_ref())).map_err(|_e| {
             PdfNotFoundError(self.documents_path.join(path).to_string_lossy().to_string())
         })?;
-        let text = doc.extract_text(&[page]).unwrap();
+        let text = doc
+            .extract_text(&[page])
+            .map_err(|e| PdfParseError(e.to_string()))?;
         Ok(text)
     }
 
@@ -121,6 +134,12 @@ impl Index {
             .map_err(|e| CreationError(e.to_string()))
     }
 
+    fn build_writer(index: &TantivyIndex) -> Result<IndexWriter> {
+        index
+            .writer(TARGET_MEMORY_BYTES)
+            .map_err(|e| CreationError(e.to_string()))
+    }
+
     fn get_pdf_dir_entries(&self) -> Vec<DirEntry> {
         let walk_dir = WalkDir::new(&self.documents_path);
         walk_dir
@@ -135,21 +154,23 @@ impl Index {
         let dir_entries = self.get_pdf_dir_entries();
         let pdf_paths_with_document_results = dir_entries
             .iter()
-            .map(|dir_entry| {
-                let pdf_path = dir_entry.path().to_owned();
-                (
-                    dir_entry.file_name().to_string_lossy().to_string(),
-                    PdfDocument::load(pdf_path).map_err(|e| PdfParseError(e.to_string())),
-                )
-            })
-            .collect::<Vec<(String, std::result::Result<PdfDocument, _>)>>();
+            .map(Self::get_path_and_pdf_document)
+            .collect::<Vec<_>>();
         pdf_paths_with_document_results
+    }
+
+    fn get_path_and_pdf_document(dir_entry: &DirEntry) -> (String, Result<PdfDocument>) {
+        let pdf_path = dir_entry.path().to_owned();
+        (
+            dir_entry.file_name().to_string_lossy().to_string(),
+            PdfDocument::load(pdf_path).map_err(|e| PdfParseError(e.to_string())),
+        )
     }
 
     /// Add a tantivy document to the index for each page of the pdf document.
     fn add_pdf_document_pages(
         &self,
-        index_writer: &mut IndexWriter,
+        index_writer: &IndexWriter,
         pdf_document: PdfDocument,
         path: String,
     ) -> Result<()> {
@@ -254,10 +275,27 @@ mod tests {
     #[serial]
     fn test_add_all_documents() {
         run_test(|| {
-            let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            let mut index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
             index.add_all_pdf_documents().unwrap();
             let segments = index.index.searchable_segments().unwrap();
             assert_eq!(1, segments.len());
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn test_update() {
+        run_test(|| {
+            let mut index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            // index 1st test document
+            index.add_all_pdf_documents().unwrap();
+            assert_eq!(1, index.searcher().num_docs());
+
+            // save 2nd document and update
+            save_fake_pdf_document(TEST_DIR_NAME, "test2.pdf", vec!["Hello, world 2".into()]);
+            index.update().unwrap();
+
+            assert_eq!(2, index.searcher().num_docs());
         });
     }
 }
