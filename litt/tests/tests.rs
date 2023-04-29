@@ -15,7 +15,7 @@ fn test_index_and_search() {
     run_test(|| {
         let search_schema = SearchSchema::default();
 
-        let index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
+        let mut index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
         index.add_all_pdf_documents().unwrap();
 
         // # Searching

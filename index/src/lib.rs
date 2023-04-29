@@ -6,6 +6,7 @@ pub mod index;
 #[derive(Debug)]
 pub enum LittIndexError {
     CreationError(String),
+    UpdateError(String),
     OpenError(String),
     ReloadError(String),
     WriteError(String),
@@ -18,6 +19,7 @@ impl fmt::Display for LittIndexError {
         match &self {
             LittIndexError::CreationError(s) => write!(f, "Index Creation Error: {}", s),
             LittIndexError::OpenError(s) => write!(f, "Error opening existing index: {}", s),
+            LittIndexError::UpdateError(s) => write!(f, "Error updating the index: {}", s),
             LittIndexError::WriteError(s) => write!(f, "Index Write Error: {}", s),
             LittIndexError::PdfParseError(s) => write!(f, "Error parsing PDF: {}", s),
             LittIndexError::PdfNotFoundError(s) => write!(f, "PDF Not found: {}", s),
