@@ -25,7 +25,7 @@ fn test_index_and_search() {
 
         // do seach: expect 1 results
         let searched_word = String::from("Hello");
-        let results = search.search(&searched_word).unwrap();
+        let results = search.search(&searched_word, None, None).unwrap();
 
         for (title, pages) in &results {
             assert_eq!(title, TEST_FILE_NAME);
