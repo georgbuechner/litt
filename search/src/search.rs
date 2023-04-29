@@ -39,7 +39,12 @@ impl Search {
         Self { index, schema }
     }
 
-    pub fn search(&self, input: &str, offset: Option<usize>, limit: Option<usize>) -> Result<HashMap<String, LinkedList<SearchResult>>> {
+    pub fn search(
+        &self,
+        input: &str,
+        offset: Option<usize>,
+        limit: Option<usize>,
+    ) -> Result<HashMap<String, LinkedList<SearchResult>>> {
         let searcher = self.index.searcher();
         let query_parser = self.index.query_parser();
 
@@ -50,7 +55,10 @@ impl Search {
         // Perform search.
         // `topdocs` contains the 10 most relevant doc ids, sorted by decreasing scores...
         let top_docs: Vec<(Score, DocAddress)> = searcher
-            .search(&query, &TopDocs::with_limit(limit.unwrap_or(10)).and_offset(offset.unwrap_or(0)))
+            .search(
+                &query,
+                &TopDocs::with_limit(limit.unwrap_or(10)).and_offset(offset.unwrap_or(0)),
+            )
             .map_err(|e| SearchError(e.to_string()))?;
 
         // Assemble results
@@ -213,7 +221,9 @@ mod tests {
 
     fn test_normal_search(search: &Search) {
         // one-word search returning 1 result with 1 page
-        let results = search.search(&String::from("flooding"), None, None).unwrap();
+        let results = search
+            .search(&String::from("flooding"), None, None)
+            .unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
         assert_eq!(1, results.get(TEST_DOC_NAME).unwrap().len());
         let first_result = results.get(TEST_DOC_NAME).unwrap().front().unwrap();
@@ -225,16 +235,22 @@ mod tests {
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 2);
 
         // two-word search returning 1 result with two pages
-        let results = search.search(&String::from("river flooding"), None, None).unwrap();
+        let results = search
+            .search(&String::from("river flooding"), None, None)
+            .unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 2);
 
         // two-word search returning 1 result with two pages
-        let id_results = search.search(&String::from("river OR flooding"), None, None).unwrap();
+        let id_results = search
+            .search(&String::from("river OR flooding"), None, None)
+            .unwrap();
         assert_eq!(id_results, results);
 
         // two-word search returning 1 result with two pages
-        let results = search.search(&String::from("river AND flooding"), None, None).unwrap();
+        let results = search
+            .search(&String::from("river AND flooding"), None, None)
+            .unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
@@ -247,17 +263,23 @@ mod tests {
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
 
         // Cannot find part of words like 'lley si' for 'valley side'
-        let results = search.search(&String::from("lley si'"), None, None).unwrap();
+        let results = search
+            .search(&String::from("lley si'"), None, None)
+            .unwrap();
         assert!(!results.contains_key(TEST_DOC_NAME));
 
         // Check caseinsensitive
-        let results = search.search(&String::from("CARRYING"), None, None).unwrap();
+        let results = search
+            .search(&String::from("CARRYING"), None, None)
+            .unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
 
         // Phrase query should not be found (since only "limbs and branches" exists)
-        let results = search.search(&String::from("\"limbs branches\""), None, None).unwrap();
+        let results = search
+            .search(&String::from("\"limbs branches\""), None, None)
+            .unwrap();
         assert!(!results.contains_key(TEST_DOC_NAME));
 
         // Phrase query should be found with higher slop
@@ -266,15 +288,25 @@ mod tests {
             .unwrap();
         assert!(results.contains_key(TEST_DOC_NAME));
 
-        // river is contained twice 
+        // river is contained twice
         let results = search.search(&String::from("river"), None, None).unwrap();
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 2);
         // By changing limit only one results left:
-        let results = search.search(&String::from("river"), None, Some(1)).unwrap();
+        let results = search
+            .search(&String::from("river"), None, Some(1))
+            .unwrap();
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
-        // Same result when changing offset: 
-        let results = search.search(&String::from("river"), Some(1), None).unwrap();
+        // Same result when changing offset:
+        let results = search
+            .search(&String::from("river"), Some(1), None)
+            .unwrap();
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
-
+        // First match has higher score than second:
+        let results = search.search(&String::from("river"), None, None).unwrap();
+        assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 2);
+        assert!(
+            results.get(TEST_DOC_NAME).unwrap().front().unwrap().score
+                >= results.get(TEST_DOC_NAME).unwrap().back().unwrap().score
+        );
     }
 }

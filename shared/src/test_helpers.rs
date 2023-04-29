@@ -63,15 +63,15 @@ pub fn generate_fake_pdf_document(page_texts: Vec<String>) -> Document {
 
 pub fn save_fake_pdf_document(directory: &str, file_name: &str, page_texts: Vec<String>) {
     create_dir_all(directory)
-        .unwrap_or_else(|_| panic!("Failed to create directory: {}", directory));
+        .unwrap_or_else(|_| panic!("Failed to create directory: {directory}"));
     let mut doc = generate_fake_pdf_document(page_texts);
-    doc.save(format!("{}/{}", directory, file_name))
-        .unwrap_or_else(|_| panic!("Failed to save test document: {}", file_name));
+    doc.save(format!("{directory}/{file_name}"))
+        .unwrap_or_else(|_| panic!("Failed to save test document: {file_name}"));
 }
 
 pub fn cleanup_dir_and_file(directory: &str, file_name: &str) {
     remove_dir_all(directory)
-        .unwrap_or_else(|_| panic!("Failed to remove directory: {}", directory));
+        .unwrap_or_else(|_| panic!("Failed to remove directory: {directory}"));
     // remove if exists, drop result
     let _ = remove_file(file_name);
 }
