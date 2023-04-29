@@ -23,6 +23,14 @@ pub struct Cli {
     /// shows all existing indices
     #[arg(short, long, default_value_t = false)]
     pub list: bool,
+
+    /// The offset for search results f.e. 0-10 (offset=0)
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
+
+    /// The max number of search results f.e. 0-10 (limit=10)
+    #[arg(long, default_value_t = 10)]
+    pub limit: usize,
 }
 
 #[test]
