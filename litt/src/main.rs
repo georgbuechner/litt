@@ -24,7 +24,8 @@ fn main() -> Result<(), LittError> {
     // Print existing litt indices
     if cli.list {
         println!("Currently available indices:");
-        for index in index_tracker.all() {
+        for index in index_tracker.all()
+            .map_err(|e| LittError(e.to_string())) {
             println!(" - {:?}", index);
         }
         return Ok(());
@@ -40,7 +41,7 @@ fn main() -> Result<(), LittError> {
         // initialize new index
         if !cli.init.is_empty() {
             println!("Creating new index at: {}.", cli.init);
-            if index_tracker.exists(&cli.init) {
+            if index_tracker.exists(&cli.init)? {
                 println!("Failed to create new index since a index at this path already exists: name: \"{}\", path: \"{}\"", index_tracker.get_name(&cli.init), cli.init);
                 // TODO (fux): return error instead.
                 return Ok(());
