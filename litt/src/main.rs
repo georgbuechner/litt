@@ -1,4 +1,5 @@
 use std::fs;
+use std::time::Instant;
 
 use clap::CommandFactory;
 use clap::Parser;
@@ -50,6 +51,7 @@ fn main() -> Result<(), LittError> {
             }
             // Add new index to index tracker (adding first, so that it can be removed in case of
             // failiure)
+            let start = Instant::now();
             _ = index_tracker.add(index_name, cli.init.clone())
                 .map_err(|e| LittError(e.to_string()));
             // Create new index
@@ -57,7 +59,7 @@ fn main() -> Result<(), LittError> {
                 .map_err(|e| LittError(e.to_string()))?;
             index.add_all_pdf_documents() 
                 .map_err(|e| LittError(e.to_string()))?;
-            println!("Successfully added {} document pages.", index.searcher().num_docs());
+            println!("Successfully added {} document pages in {:?}", index.searcher().num_docs(), start.elapsed());
 
             return Ok(());
         }
@@ -68,7 +70,8 @@ fn main() -> Result<(), LittError> {
             let index_path = path.join(LITT_DIRECTORY_NAME);
             _ = fs::remove_dir_all(index_path);
             // remove litt-index from tracker.
-            index_tracker.remove(index_name).map_err(|e| LittError(e.to_string()))?;
+            index_tracker.remove(index_name.clone()).map_err(|e| LittError(e.to_string()))?;
+            println!("Deleted index \"{}\".", index_name);
             return Ok(());
         }
 
@@ -80,7 +83,6 @@ fn main() -> Result<(), LittError> {
             SearchSchema::default(),
         )
         .map_err(|e| LittError(e.to_string()))?;
-        println!("Successfully opened index with {} document pages.", index.searcher().num_docs());
 
         // update existing index
         if cli.update {
@@ -90,19 +92,24 @@ fn main() -> Result<(), LittError> {
         }
         // do normal search
         else if !cli.term.is_empty() {
+            let num_docs = &index.searcher().num_docs();
             println!("Search index \"{}\" for {}", index_name, cli.term);
+            let start = Instant::now();
             let search = Search::new(index, SearchSchema::default());
             let results = search.search(&cli.term, cli.offset, cli.limit)
                 .map_err(|e| LittError(e.to_string()))?; 
-            println!("Results: {}", results.len());
+            println!("Found results in {} document(s):", results.len());
+            let mut counter = 0;
             for (title, pages) in results {
                 println!("- {}", title);
                 for page in pages {
                     let preview = search.get_preview(&page, &cli.term)
                         .map_err(|e| LittError(e.to_string()))?;
                     println!("  - page {}, preview: \"{}\" (score: {})", page.page, preview, page.score);
+                    counter += 1;
                 }
             }
+            println!("{} results from {} pages in {:?}.", counter, num_docs, start.elapsed());
         }
         // do interactive search
         else {

@@ -4,7 +4,6 @@ use crate::LittIndexError::{
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
-use lopdf::Document as PdfDocument;
 use std::convert::AsRef;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
@@ -57,7 +56,6 @@ impl Index {
             .unwrap_or(Self::open_index(&index_path)?);
         let reader = Self::build_reader(&index)?;
         let writer = Self::build_writer(&index)?;
-        println!("[open_or_create] Successfully opened index with {} document pages.", reader.searcher().num_docs());
         // TODO make search schema parameter optional and load schema from existing index
         Ok(Self {
             documents_path,
@@ -71,18 +69,7 @@ impl Index {
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
     pub fn add_all_pdf_documents(&mut self) -> Result<()> {
         for path in self.get_pdf_dir_entries() {
-            let full_path = path.path();
-            let (path, pdf_document_result) = Self::get_path_and_pdf_document(&path);
-            match pdf_document_result {
-                Err(e) => {
-                    eprintln!("Error reading document ({}): {}", path, e)
-                }
-                Ok(pdf_document) => {
-                    println!("Adding document: {}", path);
-                    self.add_pdf_document_pages(&self.writer, pdf_document, path, full_path)?;
-                }
-            }
-
+            self.add_pdf_document_pages(&self.writer, &path)?;
         }
         // We need to call .commit() explicitly to force the
         // index_writer to finish processing the documents in the queue,
@@ -144,23 +131,14 @@ impl Index {
             .collect::<Vec<_>>()
     }
 
-    fn get_path_and_pdf_document(dir_entry: &DirEntry) -> (String, Result<PdfDocument>) {
-        let pdf_path = dir_entry.path().to_owned();
-        (
-            dir_entry.file_name().to_string_lossy().to_string(),
-            PdfDocument::load(pdf_path).map_err(|e| PdfParseError(e.to_string())),
-        )
-    }
-
     /// Add a tantivy document to the index for each page of the pdf document.
     fn add_pdf_document_pages(
         &self,
         index_writer: &IndexWriter,
-        pdf_document: PdfDocument,
-        path: String,
-        full_path: &Path,
+        dir_entry: &DirEntry
     ) -> Result<()> {
-        let title_option = path.strip_suffix(".pdf");
+        let filename = dir_entry.file_name().to_string_lossy().to_string(); 
+        let title_option = filename.strip_suffix(".pdf");
         // Create custom directory to store all pages:
         let doc_id = Uuid::new_v4();
         let pages_path = self.documents_path
@@ -168,22 +146,27 @@ impl Index {
             .join(PAGES_DIRECTORY_NAME)
             .join(doc_id.to_string());
         create_dir_all(&pages_path).map_err(|e| CreationError(e.to_string()))?;
-        let full_path = self.documents_path.join(full_path);
+        let full_path = self.documents_path.join(dir_entry.path());
 
-        for i in 0..pdf_document.get_pages().len() {
+        for page_number in 1..10000 {
             let mut tantivy_document = TantivyDocument::new();
-            let page_number = i as u64 + 1;
             // create full path to page-body
             let mut page_path = pages_path.join(page_number.to_string());
             page_path.set_extension("txt");
             // get page body
             let mut cmd = Command::new("pdftotext");
-            _ = cmd.arg("-f")
-                .arg(format!("{}", i+1))
+            cmd.arg("-f") 
+                .arg(format!("{}", page_number))
                 .arg("-l")
-                .arg(format!("{}", i+1))
-                .arg(full_path.to_string_lossy().to_string())
-                .output().map_err(|e| PdfParseError(e.to_string()))?;
+                .arg(format!("{}", page_number))
+                .arg(full_path.to_string_lossy().to_string());
+            let res = cmd.output()
+                .map_err(|e| PdfParseError(e.to_string()))?;
+            if !res.status.success() {
+                println!("{} loaded {} pages", filename, page_number-1);
+                break
+            }
+                //.map_err(|e| PdfParseError(e.to_string()))?;
             let mut txt_path = full_path.to_path_buf();
             txt_path.set_extension("txt");
             let page_body = std::fs::read_to_string(&txt_path)
