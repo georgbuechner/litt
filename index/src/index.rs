@@ -46,12 +46,15 @@ impl Index {
 
     pub fn open_or_create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
         let documents_path = PathBuf::from(path.as_ref());
-        let index_path = documents_path.join(INDEX_DIRECTORY_NAME);
+        let index_path = documents_path
+            .join(LITT_DIRECTORY_NAME)
+            .join(INDEX_DIRECTORY_NAME);
         create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
         let index = Self::create_index(&index_path, schema.schema.clone())
             .unwrap_or(Self::open_index(&index_path)?);
         let reader = Self::build_reader(&index)?;
         let writer = Self::build_writer(&index)?;
+        println!("[open_or_create] Successfully opened index with {} document pages.", reader.searcher().num_docs());
         // TODO make search schema parameter optional and load schema from existing index
         Ok(Self {
             documents_path,
@@ -163,10 +166,6 @@ impl Index {
         path: String,
     ) -> Result<()> {
         let title_option = path.strip_suffix(".pdf");
-        if let Some(title) = title_option {
-            println!("Adding: {}", title);
-        }
-
         for i in 0..pdf_document.get_pages().len() {
             let mut tantivy_document = TantivyDocument::new();
             let page_number = i as u64 + 1;
