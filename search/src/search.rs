@@ -127,8 +127,7 @@ impl Search {
             .ok_or(SearchError(String::from(
                 "Fatal: Field \"path\" could not be read as text!",
             )))?;
-        let text = fs::read_to_string(path)
-                .map_err(|e| SearchError(e.to_string()))?;
+        let text = fs::read_to_string(path).map_err(|e| SearchError(e.to_string()))?;
         // println!("get_preview: got body: {}", text);
 
         // Generate snippet
@@ -150,7 +149,7 @@ impl Search {
         }
 
         result.push_str(&snippet.fragment()[start_from..]);
-        result.replace("\n", "")
+        result.replace('\n', "")
     }
 }
 
@@ -161,9 +160,9 @@ mod tests {
     use litt_shared::test_helpers::{cleanup_dir_and_file, save_fake_pdf_document};
 
     use super::*;
-    const TEST_DIR_NAME: &str = "resources";
+    const TEST_DIR_PATH: &str = "resources";
     const TEST_DOC_NAME: &str = "test";
-    const TEST_FILE_PATH: &str = "test.pdf";
+    const TEST_FILENAME: &str = "test.pdf";
     const BODY_1: &str =
         "A few miles south of Soledad, the Salinas River drops in close to the hillside \
         bank and runs deep and green. The water is warm too, for it has slipped twinkling \
@@ -178,14 +177,14 @@ mod tests {
 
     fn setup() {
         save_fake_pdf_document(
-            TEST_DIR_NAME,
-            TEST_FILE_PATH,
+            TEST_DIR_PATH,
+            TEST_FILENAME,
             vec![BODY_1.into(), BODY_2.into()],
         )
     }
 
     fn teardown() {
-        cleanup_dir_and_file(TEST_DIR_NAME, TEST_FILE_PATH);
+        cleanup_dir_and_file(TEST_DIR_PATH, TEST_FILENAME);
     }
 
     fn run_test<T>(test: T)
@@ -203,8 +202,9 @@ mod tests {
 
     fn create_searcher() -> Search {
         let search_schema = SearchSchema::default();
-        let mut index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
+        let mut index = Index::open_or_create(TEST_DIR_PATH, search_schema.clone()).unwrap();
         index.add_all_pdf_documents().unwrap();
+        println!("loaded {} document pages.", &index.searcher().num_docs());
         Search::new(index, search_schema)
     }
 
@@ -219,6 +219,7 @@ mod tests {
     fn test_normal_search(search: &Search) {
         // one-word search returning 1 result with 1 page
         let results = search.search(&String::from("flooding"), 0, 10).unwrap();
+        println!("Got {} results.", results.len());
         assert!(results.contains_key(TEST_DOC_NAME));
         assert_eq!(1, results.get(TEST_DOC_NAME).unwrap().len());
         let first_result = results.get(TEST_DOC_NAME).unwrap().front().unwrap();

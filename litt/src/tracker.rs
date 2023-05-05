@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
-use shellexpand;
 
 #[derive(Debug)]
 pub enum LittIndexTrackerError {
@@ -23,7 +22,6 @@ impl fmt::Display for LittIndexTrackerError {
             LittIndexTrackerError::SaveError(s) => {
                 write!(f, "The index-config could not be stored: {}", s)
             }
-
         }
     }
 }
@@ -46,18 +44,18 @@ impl IndexTracker {
                 .map_err(|e| LittIndexTrackerError::UnkownError(e.to_string()))?;
             let indices: HashMap<String, PathBuf> = serde_json::from_str(&data)
                 .map_err(|e| LittIndexTrackerError::UnkownError(e.to_string()))?;
-            Ok(Self { indices, })
+            Ok(Self { indices })
         // Otherwise create path first
         } else {
             _ = fs::create_dir_all(litt_root)
                 .map_err(|e| LittIndexTrackerError::UnkownError(e.to_string()));
             let indices = HashMap::new();
-            Ok(Self { indices, })
+            Ok(Self { indices })
         }
     }
 
     pub fn exists(&self, name: &str) -> bool {
-        return self.indices.contains_key(name);
+        self.indices.contains_key(name)
     }
 
     pub fn path_exists(&self, path_str: &str) -> Option<bool> {
@@ -81,7 +79,6 @@ impl IndexTracker {
         std::fs::write(litt_json, serde_json::to_string(&self.indices).unwrap())
             .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
     }
-
 
     pub fn get_path(&self, name: &str) -> Result<PathBuf> {
         if self.exists(name) {
