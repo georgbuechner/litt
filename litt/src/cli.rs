@@ -19,6 +19,10 @@ pub struct Cli {
     /// updates an existing litt-index
     #[arg(short, long, default_value_t = false)]
     pub update: bool,
+    
+    /// removes an existing litt-index
+    #[arg(short, long, default_value_t = false)]
+    pub remove: bool,
 
     /// shows all existing indices
     #[arg(short, long, default_value_t = false)]

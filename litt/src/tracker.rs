@@ -75,14 +75,20 @@ impl IndexTracker {
             .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
     }
 
-    pub fn get_path(self, name: &str) -> Result<PathBuf> {
-        // TODO (fux): get path from `indices` return error if it does not exist.
+    pub fn remove(mut self, name: String) -> Result<()> {
+        self.indices.remove(&name);
+        let litt_json = shellexpand::tilde("~/.litt/indices.json").to_string();
+        std::fs::write(litt_json, serde_json::to_string(&self.indices).unwrap())
+            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
+    }
+
+
+    pub fn get_path(&self, name: &str) -> Result<PathBuf> {
         if self.exists(name) {
             Ok(self.indices.get(name).unwrap().into())
         } else {
             Err(LittIndexTrackerError::NonExists(name.into()))
         }
-        // self.indices.get(name).ok_or(LittIndexTrackerError::UnkownError(String::from("")))
     }
 
     pub fn get_name(&self, path_str: &str) -> Option<String> {

@@ -1,3 +1,5 @@
+use std::fs;
+
 use clap::CommandFactory;
 use clap::Parser;
 
@@ -5,6 +7,7 @@ extern crate litt_search;
 use litt_index::index::Index;
 use litt_search::search::Search;
 use litt_shared::search_schema::SearchSchema;
+use litt_shared::LITT_DIRECTORY_NAME;
 
 mod cli;
 mod tracker;
@@ -46,11 +49,23 @@ fn main() -> Result<(), LittError> {
                 return Err(LittError(format!("Failed to create new index since a index at this path already exists: name: \"{}\", path: \"{}\"", index_tracker.get_name(&cli.init).unwrap_or_default(), cli.init)));
             }
             // Create new index
-            _ = Index::create(&cli.init, SearchSchema::default())
-                .map_err(|e| LittError(e.to_string()));
+            let mut index = Index::create(&cli.init, SearchSchema::default())
+                .map_err(|e| LittError(e.to_string()))?;
+            index.add_all_pdf_documents() 
+                .map_err(|e| LittError(e.to_string()))?;
             // Add new index to index tracker
             _ = index_tracker.add(index_name, cli.init.clone())
                 .map_err(|e| LittError(e.to_string()));
+            return Ok(());
+        }
+
+        if cli.remove {
+            // remove litt directory at index path
+            let path = index_tracker.get_path(&index_name).map_err(|e| LittError(e.to_string()))?;
+            let index_path = path.join(LITT_DIRECTORY_NAME);
+            _ = fs::remove_dir_all(index_path);
+            // remove litt-index from tracker.
+            index_tracker.remove(index_name).map_err(|e| LittError(e.to_string()))?;
             return Ok(());
         }
 
@@ -71,8 +86,19 @@ fn main() -> Result<(), LittError> {
         }
         // do normal search
         else if !cli.term.is_empty() {
-            let _search = Search::new(index, SearchSchema::default());
             println!("Search index \"{}\" for {}", index_name, cli.term);
+            let search = Search::new(index, SearchSchema::default());
+            let results = search.search(&cli.term, cli.offset, cli.limit)
+                .map_err(|e| LittError(e.to_string()))?; 
+            println!("Results: {}", results.len());
+            for (title, pages) in results {
+                println!("- {}", title);
+                for page in pages {
+                    let preview = search.get_preview(&page, &cli.term)
+                        .map_err(|e| LittError(e.to_string()))?;
+                    println!("  - page {}, preview: \"{}\". score: {}", page.page, preview, page.score);
+                }
+            }
         }
         // do interactive search
         else {
