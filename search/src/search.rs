@@ -1,4 +1,5 @@
 use std::collections::{HashMap, LinkedList};
+use std::fs;
 use tantivy::collector::TopDocs;
 use tantivy::{DocAddress, Score, Snippet, SnippetGenerator};
 
@@ -126,10 +127,9 @@ impl Search {
             .ok_or(SearchError(String::from(
                 "Fatal: Field \"path\" could not be read as text!",
             )))?;
-        let text = self
-            .index
-            .get_page_body(search_result.page, path)
-            .map_err(|e| SearchError(e.to_string()))?;
+        let text = fs::read_to_string(path)
+                .map_err(|e| SearchError(e.to_string()))?;
+        // println!("get_preview: got body: {}", text);
 
         // Generate snippet
         let snippet = snippet_generator.snippet(&text);
@@ -150,7 +150,7 @@ impl Search {
         }
 
         result.push_str(&snippet.fragment()[start_from..]);
-        result
+        result.replace("\n", "")
     }
 }
 

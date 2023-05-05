@@ -1,5 +1,5 @@
 use crate::LittIndexError::{
-    CreationError, OpenError, PdfNotFoundError, PdfParseError, ReloadError, UpdateError, WriteError,
+    CreationError, OpenError, PdfParseError, ReloadError, UpdateError, WriteError,
 };
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
@@ -8,12 +8,15 @@ use lopdf::Document as PdfDocument;
 use std::convert::AsRef;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
 use walkdir::{DirEntry, WalkDir};
+use uuid::Uuid;
 
 const INDEX_DIRECTORY_NAME: &str = "index";
+const PAGES_DIRECTORY_NAME: &str = "pages";
 /// The total target memory usage that will be split between a given number of threads
 const TARGET_MEMORY_BYTES: usize = 100_000_000;
 
@@ -68,6 +71,7 @@ impl Index {
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
     pub fn add_all_pdf_documents(&mut self) -> Result<()> {
         for path in self.get_pdf_dir_entries() {
+            let full_path = path.path();
             let (path, pdf_document_result) = Self::get_path_and_pdf_document(&path);
             match pdf_document_result {
                 Err(e) => {
@@ -75,7 +79,7 @@ impl Index {
                 }
                 Ok(pdf_document) => {
                     println!("Adding document: {}", path);
-                    self.add_pdf_document_pages(&self.writer, pdf_document, path)?;
+                    self.add_pdf_document_pages(&self.writer, pdf_document, path, full_path)?;
                 }
             }
 
@@ -106,16 +110,6 @@ impl Index {
 
     pub fn query_parser(&self) -> QueryParser {
         QueryParser::for_index(&self.index, self.schema.default_fields())
-    }
-
-    pub fn get_page_body(&self, page: u32, path: impl AsRef<Path>) -> Result<String> {
-        let doc = PdfDocument::load(self.documents_path.join(path.as_ref())).map_err(|_e| {
-            PdfNotFoundError(self.documents_path.join(path).to_string_lossy().to_string())
-        })?;
-        let text = doc
-            .extract_text(&[page])
-            .map_err(|e| PdfParseError(e.to_string()))?;
-        Ok(text)
     }
 
     fn create_index(path: &PathBuf, schema: Schema) -> Result<TantivyIndex> {
@@ -164,24 +158,51 @@ impl Index {
         index_writer: &IndexWriter,
         pdf_document: PdfDocument,
         path: String,
+        full_path: &Path,
     ) -> Result<()> {
         let title_option = path.strip_suffix(".pdf");
+        // Create custom directory to store all pages:
+        let doc_id = Uuid::new_v4();
+        let pages_path = self.documents_path
+            .join(LITT_DIRECTORY_NAME)
+            .join(PAGES_DIRECTORY_NAME)
+            .join(doc_id.to_string());
+        create_dir_all(&pages_path).map_err(|e| CreationError(e.to_string()))?;
+        let full_path = self.documents_path.join(full_path);
+
         for i in 0..pdf_document.get_pages().len() {
             let mut tantivy_document = TantivyDocument::new();
             let page_number = i as u64 + 1;
-            let page_body = pdf_document
-                .extract_text(&[page_number as u32])
+            // create full path to page-body
+            let mut page_path = pages_path.join(page_number.to_string());
+            page_path.set_extension("txt");
+            // get page body
+            let mut cmd = Command::new("pdftotext");
+            _ = cmd.arg("-f")
+                .arg(format!("{}", i+1))
+                .arg("-l")
+                .arg(format!("{}", i+1))
+                .arg(full_path.to_string_lossy().to_string())
+                .output().map_err(|e| PdfParseError(e.to_string()))?;
+            let mut txt_path = full_path.to_path_buf();
+            txt_path.set_extension("txt");
+            let page_body = std::fs::read_to_string(&txt_path)
                 .map_err(|e| PdfParseError(e.to_string()))?;
-            tantivy_document.add_text(self.schema.path, path.clone());
+            std::fs::remove_file(txt_path)
+                .map_err(|e| PdfParseError(e.to_string()))?;
 
+            // add fields to tantivy document
+            tantivy_document.add_text(self.schema.path, page_path.to_string_lossy());
             if let Some(title) = title_option {
                 tantivy_document.add_text(self.schema.title, title)
             }
             tantivy_document.add_u64(self.schema.page, page_number);
-            tantivy_document.add_text(self.schema.body, page_body);
+            tantivy_document.add_text(self.schema.body, page_body.clone());
             index_writer
                 .add_document(tantivy_document)
                 .map_err(|e| WriteError(e.to_string()))?;
+            // Store body at page-path: 
+            std::fs::write(page_path, page_body.as_bytes()).map_err(|e| CreationError(e.to_string()))?;
         }
         Ok(())
     }

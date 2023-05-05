@@ -48,14 +48,17 @@ fn main() -> Result<(), LittError> {
             {
                 return Err(LittError(format!("Failed to create new index since a index at this path already exists: name: \"{}\", path: \"{}\"", index_tracker.get_name(&cli.init).unwrap_or_default(), cli.init)));
             }
+            // Add new index to index tracker (adding first, so that it can be removed in case of
+            // failiure)
+            _ = index_tracker.add(index_name, cli.init.clone())
+                .map_err(|e| LittError(e.to_string()));
             // Create new index
             let mut index = Index::create(&cli.init, SearchSchema::default())
                 .map_err(|e| LittError(e.to_string()))?;
             index.add_all_pdf_documents() 
                 .map_err(|e| LittError(e.to_string()))?;
-            // Add new index to index tracker
-            _ = index_tracker.add(index_name, cli.init.clone())
-                .map_err(|e| LittError(e.to_string()));
+            println!("Successfully added {} document pages.", index.searcher().num_docs());
+
             return Ok(());
         }
 
@@ -77,6 +80,7 @@ fn main() -> Result<(), LittError> {
             SearchSchema::default(),
         )
         .map_err(|e| LittError(e.to_string()))?;
+        println!("Successfully opened index with {} document pages.", index.searcher().num_docs());
 
         // update existing index
         if cli.update {
@@ -96,7 +100,7 @@ fn main() -> Result<(), LittError> {
                 for page in pages {
                     let preview = search.get_preview(&page, &cli.term)
                         .map_err(|e| LittError(e.to_string()))?;
-                    println!("  - page {}, preview: \"{}\". score: {}", page.page, preview, page.score);
+                    println!("  - page {}, preview: \"{}\" (score: {})", page.page, preview, page.score);
                 }
             }
         }
