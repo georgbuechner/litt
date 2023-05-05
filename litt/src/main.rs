@@ -17,15 +17,15 @@ struct LittError(String);
 fn main() -> Result<(), LittError> {
     let cli = Cli::parse();
 
-    let index_tracker = IndexTracker::create(".litt".into());
+    let index_tracker =
+        IndexTracker::create(".litt".into()).map_err(|e| LittError(e.to_string()))?;
 
     // everything that does not require litt index
     //
     // Print existing litt indices
     if cli.list {
         println!("Currently available indices:");
-        for index in index_tracker.all()
-            .map_err(|e| LittError(e.to_string())) {
+        for index in index_tracker.all().map_err(|e| LittError(e.to_string()))? {
             println!(" - {:?}", index);
         }
         return Ok(());
@@ -40,29 +40,33 @@ fn main() -> Result<(), LittError> {
     } else if let Some(index_name) = cli.litt_index {
         // initialize new index
         if !cli.init.is_empty() {
-            println!("Creating new index at: {}.", cli.init);
-            if index_tracker.exists(&cli.init)? {
-                println!("Failed to create new index since a index at this path already exists: name: \"{}\", path: \"{}\"", index_tracker.get_name(&cli.init), cli.init);
-                // TODO (fux): return error instead.
-                return Ok(());
+            println!("Creating new index \"{}\" at: {}: ", index_name, cli.init);
+            if index_tracker.exists(&index_name) || !index_tracker.path_exists(&cli.init).is_none()
+            {
+                return Err(LittError(format!("Failed to create new index since a index at this path already exists: name: \"{}\", path: \"{}\"", index_tracker.get_name(&cli.init).unwrap_or_default(), cli.init)));
             }
-            // TODO (fux): check if path exists using `tracker.exists(index_name)`
-            // before initializing new index
-            let _index = Index::create(&cli.init, SearchSchema::default());
+            // Create new index
+            _ = Index::create(&cli.init, SearchSchema::default())
+                .map_err(|e| LittError(e.to_string()));
             // Add new index to index tracker
-            index_tracker.add(index_name, cli.init.clone());
+            _ = index_tracker.add(index_name, cli.init.clone())
+                .map_err(|e| LittError(e.to_string()));
             return Ok(());
         }
 
         // get index:
-        let index =
-            Index::open_or_create(index_tracker.get_path(&index_name), SearchSchema::default())
-                .map_err(|e| LittError(e.to_string()))?;
+        let mut index = Index::open_or_create(
+            index_tracker
+                .get_path(&index_name)
+                .map_err(|e| LittError(e.to_string()))?,
+            SearchSchema::default(),
+        )
+        .map_err(|e| LittError(e.to_string()))?;
 
         // update existing index
         if cli.update {
-            // TODO (fux): implement update
             println!("Updating index \"{}\".", index_name);
+            _ = index.update().map_err(|e| LittError(e.to_string()));
             return Ok(());
         }
         // do normal search

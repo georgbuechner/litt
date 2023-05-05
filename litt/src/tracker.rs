@@ -1,72 +1,102 @@
 use std::collections::HashMap;
-use std::fs;
+use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-
-const LITT_ROOT_PATH: &str = "~/.litt";
-const LITT_INDICIES_JSON: &str = "~/.litt/indices.json";
+use std::{fmt, fs};
+use shellexpand;
 
 #[derive(Debug)]
 pub enum LittIndexTrackerError {
     UnkownError(String),
+    NonExists(String),
+    SaveError(String),
 }
 
-#[derive(Serialize, Deserialize)]
-struct Indices {
-    indices: HashMap<String, PathBuf>,
-}
-impl Indices {
-    fn new() -> Self {
-        let indices: HashMap<String, PathBuf> = HashMap::new();
-        Self { indices }
+impl fmt::Display for LittIndexTrackerError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self {
+            LittIndexTrackerError::UnkownError(s) => {
+                write!(f, "Unkown error reading from index-config: {}", s)
+            }
+            LittIndexTrackerError::NonExists(s) => {
+                write!(f, "The given index {} does not exists", s)
+            }
+            LittIndexTrackerError::SaveError(s) => {
+                write!(f, "The index-config could not be stored: {}", s)
+            }
+
+        }
     }
 }
 
-type Result<T> = std::result::Result<T, LittIndexTrackerError>;
+pub type Result<T> = std::result::Result<T, LittIndexTrackerError>;
 
 pub struct IndexTracker {
-    // TODO (fux): do we need to have an extra struct or can we have the HashMap here?
-    indices: Indices
+    indices: HashMap<String, PathBuf>,
 }
 
 impl IndexTracker {
-    pub fn create(_path: String) -> Result<Self>  {
+    pub fn create(_path: String) -> Result<Self> {
+        let litt_root = shellexpand::tilde("~/.litt/").to_string();
+        let litt_json = shellexpand::tilde("~/.litt/indices.json").to_string();
+
         // Check if stored litt indices json already exists
-        if Path::new(LITT_INDICIES_JSON).exists() {
-            let data = fs::read_to_string(LITT_INDICIES_JSON)
+        if Path::new(&litt_json).exists() {
+            // load json
+            let data = fs::read_to_string(litt_json)
                 .map_err(|e| LittIndexTrackerError::UnkownError(e.to_string()))?;
-            let indices: Indices = serde_json::from_str(&data)
+            let indices: HashMap<String, PathBuf> = serde_json::from_str(&data)
                 .map_err(|e| LittIndexTrackerError::UnkownError(e.to_string()))?;
-            Ok(Self { indices })
-        }
-        else {
-            fs::create_dir_all("/some/dir")
+            Ok(Self { indices, })
+        // Otherwise create path first
+        } else {
+            _ = fs::create_dir_all(litt_root)
                 .map_err(|e| LittIndexTrackerError::UnkownError(e.to_string()));
-            let indices = Indices::new();
-            Ok(Self { indices })
+            let indices = HashMap::new();
+            Ok(Self { indices, })
         }
     }
 
     pub fn exists(&self, name: &str) -> bool {
-        return self.indices.indices.contains_key(name)
+        return self.indices.contains_key(name);
     }
 
-    pub fn add(mut self, name: String, path: impl AsRef<Path>) {
+    pub fn path_exists(&self, path_str: &str) -> Option<bool> {
+        let path = &PathBuf::from(path_str);
+        self.indices
+            .iter()
+            .find_map(|(_, val)| if val == path { Some(true) } else { None })
+    }
+
+    pub fn add(mut self, name: String, path: impl AsRef<Path>) -> Result<()> {
+        let litt_json = shellexpand::tilde("~/.litt/indices.json").to_string();
         let documents_path = PathBuf::from(path.as_ref());
-        self.indices.indices.insert(name, documents_path);
+        self.indices.insert(name, documents_path);
+        std::fs::write(litt_json, serde_json::to_string(&self.indices).unwrap())
+            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
     }
 
-    pub fn get_path(self, name: &str) -> &PathBuf {
+    pub fn get_path(self, name: &str) -> Result<PathBuf> {
         // TODO (fux): get path from `indices` return error if it does not exist.
-        return self.indices.indices.get(name).unwrap()
+        if self.exists(name) {
+            Ok(self.indices.get(name).unwrap().into())
+        } else {
+            Err(LittIndexTrackerError::NonExists(name.into()))
+        }
+        // self.indices.get(name).ok_or(LittIndexTrackerError::UnkownError(String::from("")))
     }
 
-    pub fn get_name(&self, _path: impl AsRef<Path>) -> String {
-        // TODO (fux): get name from `indices` by given path.
-        String::from("")
+    pub fn get_name(&self, path_str: &str) -> Option<String> {
+        let path = &PathBuf::from(path_str);
+        self.indices.iter().find_map(|(key, val)| {
+            if val == path {
+                Some(key.to_string())
+            } else {
+                None
+            }
+        })
     }
 
     pub fn all(self) -> Result<HashMap<String, PathBuf>> {
-        Ok( self.indices.indices )
+        Ok(self.indices)
     }
 }
