@@ -64,19 +64,19 @@ impl Index {
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
     pub fn add_all_pdf_documents(&mut self) -> Result<()> {
-        let pdf_paths_with_document_results = self.load_pdf_docs();
-
-        for (path, pdf_document_result) in pdf_paths_with_document_results {
+        for path in self.get_pdf_dir_entries() {
+            let (path, pdf_document_result) = Self::get_path_and_pdf_document(&path);
             match pdf_document_result {
                 Err(e) => {
                     eprintln!("Error reading document ({}): {}", path, e)
                 }
                 Ok(pdf_document) => {
+                    println!("Adding document: {}", path);
                     self.add_pdf_document_pages(&self.writer, pdf_document, path)?;
                 }
             }
-        }
 
+        }
         // We need to call .commit() explicitly to force the
         // index_writer to finish processing the documents in the queue,
         // flush the current index to the disk, and advertise
@@ -147,15 +147,6 @@ impl Index {
             .collect::<Vec<_>>()
     }
 
-    fn load_pdf_docs(&self) -> Vec<(String, Result<PdfDocument>)> {
-        let dir_entries = self.get_pdf_dir_entries();
-        let pdf_paths_with_document_results = dir_entries
-            .iter()
-            .map(Self::get_path_and_pdf_document)
-            .collect::<Vec<_>>();
-        pdf_paths_with_document_results
-    }
-
     fn get_path_and_pdf_document(dir_entry: &DirEntry) -> (String, Result<PdfDocument>) {
         let pdf_path = dir_entry.path().to_owned();
         (
@@ -172,6 +163,9 @@ impl Index {
         path: String,
     ) -> Result<()> {
         let title_option = path.strip_suffix(".pdf");
+        if let Some(title) = title_option {
+            println!("Adding: {}", title);
+        }
 
         for i in 0..pdf_document.get_pages().len() {
             let mut tantivy_document = TantivyDocument::new();
