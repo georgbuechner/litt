@@ -157,42 +157,20 @@ impl Search {
 mod tests {
     use std::panic;
 
-    use litt_shared::test_helpers::{cleanup_dir_and_file, save_fake_pdf_document};
+    use litt_shared::test_helpers::cleanup_litt_files;
 
     use super::*;
-    const TEST_DIR_PATH: &str = "resources";
+    const TEST_DIR_NAME: &str = "../resources";
     const TEST_DOC_NAME: &str = "test";
-    const TEST_FILENAME: &str = "test.pdf";
-    const BODY_1: &str =
-        "A few miles south of Soledad, the Salinas River drops in close to the hillside \
-        bank and runs deep and green. The water is warm too, for it has slipped twinkling \
-        over the yellow sands in the sunlight before reaching the narrow pool.";
-
-    const BODY_2: &str =
-        "On one side of the river the golden foothill slopes curve up to the strong and rocky \
-        Gabilan Mountains, but on the valley side the water is lined with trees—willows \
-        fresh and green with every spring, carrying in their lower leaf junctures the \
-        debris of the winter’s flooding; and sycamores with mottled, white, recumbent \
-        limbs and branches that arch over the pool";
-
-    fn setup() {
-        save_fake_pdf_document(
-            TEST_DIR_PATH,
-            TEST_FILENAME,
-            vec![BODY_1.into(), BODY_2.into()],
-        )
-    }
 
     fn teardown() {
-        cleanup_dir_and_file(TEST_DIR_PATH, TEST_FILENAME);
+        cleanup_litt_files(TEST_DIR_NAME)
     }
 
     fn run_test<T>(test: T)
     where
         T: FnOnce() + panic::UnwindSafe,
     {
-        setup();
-
         let result = panic::catch_unwind(test);
 
         teardown();
@@ -202,7 +180,7 @@ mod tests {
 
     fn create_searcher() -> Search {
         let search_schema = SearchSchema::default();
-        let mut index = Index::open_or_create(TEST_DIR_PATH, search_schema.clone()).unwrap();
+        let mut index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
         index.add_all_pdf_documents().unwrap();
         println!("loaded {} document pages.", &index.searcher().num_docs());
         Search::new(index, search_schema)

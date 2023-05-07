@@ -155,6 +155,9 @@ impl Index {
 
         while pdf_to_text_successful {
             page_number += 1;
+            // finalize page output path (to the location where all pages are stored)
+            let mut page_path = pages_path.join(page_number.to_string());
+            page_path.set_extension("txt");
             // get page body
             let mut pdf_to_text_call = Command::new("pdftotext");
             pdf_to_text_call
@@ -162,30 +165,19 @@ impl Index {
                 .arg(format!("{}", page_number))
                 .arg("-l")
                 .arg(format!("{}", page_number))
-                .arg(full_path_to_pdf.to_string_lossy().to_string());
+                .arg(full_path_to_pdf.to_string_lossy().to_string())
+                .arg(page_path.to_string_lossy().to_string());
 
-            println!("loading page: {:?}", pdf_to_text_call);
             let pdf_to_text_output_result = pdf_to_text_call
                 .output();
             let pdf_to_text_output = pdf_to_text_output_result.map_err(|e| PdfParseError(e.to_string()))?;
             pdf_to_text_successful = pdf_to_text_output.status.success();
 
             if pdf_to_text_successful {
-                // create full path to page-body
-                let mut page_path = pages_path.join(page_number.to_string());
-                page_path.set_extension("txt");
-                let mut path_to_page_txt = full_path_to_pdf.to_path_buf();
-                path_to_page_txt.set_extension("txt");
-                let page_body = std::fs::read_to_string(&path_to_page_txt)
+                // read page-body from generated .txt file
+                let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
-
                 self.add_pdf_page_to_index(title_option, page_number, &page_path, &page_body)?;
-
-                std::fs::remove_file(path_to_page_txt).map_err(|e| PdfParseError(e.to_string()))?;
-                println!("Got body: {}", page_body.len());
-                // Store body at page-path:
-                std::fs::write(page_path, page_body.as_bytes())
-                    .map_err(|e| CreationError(e.to_string()))?;
             }
         }
 
