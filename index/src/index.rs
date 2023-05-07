@@ -166,9 +166,9 @@ impl Index {
                 .arg(full_path_to_pdf.to_string_lossy().to_string())
                 .arg(page_path.to_string_lossy().to_string());
 
-            let pdf_to_text_output_result = pdf_to_text_call
-                .output();
-            let pdf_to_text_output = pdf_to_text_output_result.map_err(|e| PdfParseError(e.to_string()))?;
+            let pdf_to_text_output_result = pdf_to_text_call.output();
+            let pdf_to_text_output =
+                pdf_to_text_output_result.map_err(|e| PdfParseError(e.to_string()))?;
             pdf_to_text_successful = pdf_to_text_output.status.success();
 
             if pdf_to_text_successful {
@@ -176,10 +176,10 @@ impl Index {
                 let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
                 self.add_pdf_page_to_index(
-                    &dir_entry.path().to_string_lossy().to_string(), 
-                    page_number, 
-                    &page_path, 
-                    &page_body
+                    &dir_entry.path().to_string_lossy(),
+                    page_number,
+                    &page_path,
+                    &page_body,
                 )?;
             }
         }
@@ -197,12 +197,12 @@ impl Index {
 
     fn add_pdf_page_to_index(
         &self,
-        path: &String,
+        path: &str,
         page_number: u64,
         page_path: &Path,
         page_body: &str,
     ) -> Result<()> {
-        let path = &path[self.documents_path.to_string_lossy().to_string().len()+1..];
+        let path = &path[self.documents_path.to_string_lossy().to_string().len() + 1..];
 
         let mut tantivy_document = TantivyDocument::new();
 

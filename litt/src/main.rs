@@ -20,7 +20,6 @@ use colored::*;
 #[derive(Debug)]
 struct LittError(String);
 
-
 fn main() -> Result<(), LittError> {
     let cli = Cli::parse();
 
@@ -48,8 +47,7 @@ fn main() -> Result<(), LittError> {
         // initialize new index
         if !cli.init.is_empty() {
             println!("Creating new index \"{}\" at: {}: ", index_name, cli.init);
-            if index_tracker.exists(&index_name) || index_tracker.path_exists(&cli.init).is_some()
-            {
+            if index_tracker.exists(&index_name) || index_tracker.path_exists(&cli.init).is_some() {
                 return Err(LittError(format!("Failed to create new index since a index at this path already exists: name: \"{}\", path: \"{}\"", index_tracker.get_name(&cli.init).unwrap_or_default(), cli.init)));
             }
             // Add new index to index tracker (adding first, so that it can be removed in case of
@@ -92,11 +90,8 @@ fn main() -> Result<(), LittError> {
         let index_path = index_tracker
             .get_path(&index_name)
             .map_err(|e| LittError(e.to_string()))?;
-        let mut index = Index::open_or_create(
-            index_path.clone(),
-            SearchSchema::default(),
-        )
-        .map_err(|e| LittError(e.to_string()))?;
+        let mut index = Index::open_or_create(index_path.clone(), SearchSchema::default())
+            .map_err(|e| LittError(e.to_string()))?;
 
         // update existing index
         if cli.reload {
@@ -110,7 +105,6 @@ fn main() -> Result<(), LittError> {
             );
             return Ok(());
         }
-
         // do normal search
         else if !cli.term.is_empty() {
             let num_docs = &index.searcher().num_docs();
@@ -129,11 +123,13 @@ fn main() -> Result<(), LittError> {
                 println!("   ({})", index_path.to_string_lossy().italic());
                 for page in pages {
                     let preview = search
-                        .get_preview(&page, &cli.term)
+                        .get_preview(page, &cli.term)
                         .map_err(|e| LittError(e.to_string()))?;
                     println!(
                         "  - p.{}: \"{}\", (score: {})",
-                        page.page, preview.italic(), page.score
+                        page.page,
+                        preview.italic(),
+                        page.score
                     );
                 }
             }
