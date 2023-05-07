@@ -137,8 +137,6 @@ impl Index {
             "add_pdf_document_pages: {}",
             dir_entry.path().to_string_lossy()
         );
-        let filename = dir_entry.file_name().to_string_lossy().to_string();
-        let title_option = filename.strip_suffix(".pdf");
         // Create custom directory to store all pages:
         let doc_id = Uuid::new_v4();
         let pages_path = self
@@ -177,13 +175,18 @@ impl Index {
                 // read page-body from generated .txt file
                 let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
-                self.add_pdf_page_to_index(title_option, page_number, &page_path, &page_body)?;
+                self.add_pdf_page_to_index(
+                    &dir_entry.path().to_string_lossy().to_string(), 
+                    page_number, 
+                    &page_path, 
+                    &page_body
+                )?;
             }
         }
 
         println!(
             "{} loaded {} page{} at {}",
-            filename,
+            dir_entry.path().to_string_lossy(),
             page_number,
             if page_number != 1 { "s" } else { "" },
             full_path_to_pdf.to_string_lossy()
@@ -194,18 +197,18 @@ impl Index {
 
     fn add_pdf_page_to_index(
         &self,
-        title_option: Option<&str>,
+        path: &String,
         page_number: u64,
         page_path: &Path,
         page_body: &str,
     ) -> Result<()> {
+        let path = &path[self.documents_path.to_string_lossy().to_string().len()+1..];
+
         let mut tantivy_document = TantivyDocument::new();
 
         // add fields to tantivy document
         tantivy_document.add_text(self.schema.path, page_path.to_string_lossy());
-        if let Some(title) = title_option {
-            tantivy_document.add_text(self.schema.title, title)
-        }
+        tantivy_document.add_text(self.schema.title, path);
         tantivy_document.add_u64(self.schema.page, page_number);
         tantivy_document.add_text(self.schema.body, page_body);
         self.writer

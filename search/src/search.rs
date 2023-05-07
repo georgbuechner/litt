@@ -161,7 +161,7 @@ mod tests {
 
     use super::*;
     const TEST_DIR_NAME: &str = "../resources";
-    const TEST_DOC_NAME: &str = "test";
+    const TEST_DOC_NAME: &str = "test.pdf";
 
     fn teardown() {
         cleanup_litt_files(TEST_DIR_NAME)

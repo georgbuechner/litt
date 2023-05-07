@@ -7,7 +7,7 @@ use litt_shared::search_schema::SearchSchema;
 use litt_shared::test_helpers::cleanup_litt_files;
 
 const TEST_DIR_NAME: &str = "../resources";
-const TEST_FILE_NAME: &str = "test";
+const TEST_FILE_NAME: &str = "test.pdf";
 
 #[test]
 fn test_index_and_search() {
