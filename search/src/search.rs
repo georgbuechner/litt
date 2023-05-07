@@ -108,8 +108,9 @@ impl Search {
         let query = query_parser
             .parse_query(input)
             .map_err(|e| SearchError(e.to_string()))?;
-        let snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
+        let mut snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
             .map_err(|e| SearchError(e.to_string()))?;
+        snippet_generator.set_max_num_chars(70);
         let retrieved_doc = searcher
             .doc(DocAddress {
                 segment_ord: (search_result.segment_ord),

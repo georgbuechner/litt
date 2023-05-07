@@ -84,7 +84,7 @@ impl Index {
     }
 
     /// For now, just delete existing index and index the documents again.
-    pub fn update(&mut self) -> Result<()> {
+    pub fn reload(&mut self) -> Result<()> {
         self.writer
             .delete_all_documents()
             .map_err(|e| UpdateError(e.to_string()))?;
@@ -314,7 +314,7 @@ mod tests {
 
             // save 2nd document and update
             save_fake_pdf_document(TEST_DIR_NAME, "test2.pdf", vec!["Hello, world 2".into()]);
-            index.update().unwrap();
+            index.reload().unwrap();
 
             assert_eq!(2, index.searcher().num_docs());
         });

@@ -15,8 +15,11 @@ mod tracker;
 use cli::Cli;
 use tracker::IndexTracker;
 
+use colored::*;
+
 #[derive(Debug)]
 struct LittError(String);
+
 
 fn main() -> Result<(), LittError> {
     let cli = Cli::parse();
@@ -62,7 +65,7 @@ fn main() -> Result<(), LittError> {
                 .add_all_pdf_documents()
                 .map_err(|e| LittError(e.to_string()))?;
             println!(
-                "Successfully added {} document pages in {:?}",
+                "Successfully indexed {} document pages in {:?}",
                 index.searcher().num_docs(),
                 start.elapsed()
             );
@@ -86,20 +89,28 @@ fn main() -> Result<(), LittError> {
         }
 
         // get index:
+        let index_path = index_tracker
+            .get_path(&index_name)
+            .map_err(|e| LittError(e.to_string()))?;
         let mut index = Index::open_or_create(
-            index_tracker
-                .get_path(&index_name)
-                .map_err(|e| LittError(e.to_string()))?,
+            index_path.clone(),
             SearchSchema::default(),
         )
         .map_err(|e| LittError(e.to_string()))?;
 
         // update existing index
-        if cli.update {
-            println!("Updating index \"{}\".", index_name);
-            _ = index.update().map_err(|e| LittError(e.to_string()));
+        if cli.reload {
+            println!("Reloading index \"{}\".", index_name);
+            let start = Instant::now();
+            _ = index.reload().map_err(|e| LittError(e.to_string()));
+            println!(
+                "Reload done. Successfully indexed {} document pages in {:?}",
+                index.searcher().num_docs(),
+                start.elapsed()
+            );
             return Ok(());
         }
+
         // do normal search
         else if !cli.term.is_empty() {
             let num_docs = &index.searcher().num_docs();
@@ -111,22 +122,24 @@ fn main() -> Result<(), LittError> {
                 .map_err(|e| LittError(e.to_string()))?;
             println!("Found results in {} document(s):", results.len());
             let mut counter = 0;
-            for (title, pages) in results {
-                println!("- {}", title);
+            for (title, pages) in &results {
+                counter += 1;
+                println!("{}. {}", counter, title.bold());
+                let index_path = index_path.join(title);
+                println!("   ({})", index_path.to_string_lossy().italic());
                 for page in pages {
                     let preview = search
                         .get_preview(&page, &cli.term)
                         .map_err(|e| LittError(e.to_string()))?;
                     println!(
-                        "  - page {}, preview: \"{}\" (score: {})",
-                        page.page, preview, page.score
+                        "  - p.{}: \"{}\", (score: {})",
+                        page.page, preview.italic(), page.score
                     );
-                    counter += 1;
                 }
             }
             println!(
                 "{} results from {} pages in {:?}.",
-                counter,
+                results.values().fold(0, |acc, list| acc + list.len()),
                 num_docs,
                 start.elapsed()
             );
