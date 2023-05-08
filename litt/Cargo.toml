@@ -7,6 +7,10 @@ edition = "2021"
 tantivy = { workspace = true }
 lopdf = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shellexpand = { workspace = true }
+colored = { workspace = true }
 litt_search = { path = "../search" }
 litt_shared = { path = "../shared" }
 litt_index = { path = "../index" }

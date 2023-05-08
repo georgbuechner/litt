@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 tantivy = { workspace = true }
 lopdf = { workspace = true }
+uuid = { workspace = true }
 walkdir = "2.3.3"
 litt_shared = { path = "../shared" }
 

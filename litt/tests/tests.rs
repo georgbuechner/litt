@@ -1,14 +1,13 @@
 use std::panic;
 
-use litt_shared::test_helpers::{cleanup_dir_and_file, save_fake_pdf_document};
 extern crate litt_search;
 use litt_index::index::Index;
 use litt_search::search::Search;
 use litt_shared::search_schema::SearchSchema;
+use litt_shared::test_helpers::cleanup_litt_files;
 
-const TEST_DIR_NAME: &str = "resources";
-const TEST_FILE_NAME: &str = "test";
-const TEST_FILE_PATH: &str = "test.pdf";
+const TEST_DIR_NAME: &str = "../resources";
+const TEST_FILE_NAME: &str = "test.pdf";
 
 #[test]
 fn test_index_and_search() {
@@ -48,20 +47,14 @@ fn test_index_and_search() {
     });
 }
 
-fn setup() {
-    save_fake_pdf_document(TEST_DIR_NAME, TEST_FILE_PATH, vec!["Hello, world".into()]);
-}
-
 fn teardown() {
-    cleanup_dir_and_file(TEST_DIR_NAME, TEST_FILE_PATH);
+    cleanup_litt_files(TEST_DIR_NAME)
 }
 
 fn run_test<T>(test: T)
 where
     T: FnOnce() + panic::UnwindSafe,
 {
-    setup();
-
     let result = panic::catch_unwind(test);
 
     teardown();

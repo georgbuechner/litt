@@ -1,4 +1,5 @@
 use std::collections::{HashMap, LinkedList};
+use std::fs;
 use tantivy::collector::TopDocs;
 use tantivy::{DocAddress, Score, Snippet, SnippetGenerator};
 
@@ -107,8 +108,9 @@ impl Search {
         let query = query_parser
             .parse_query(input)
             .map_err(|e| SearchError(e.to_string()))?;
-        let snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
+        let mut snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
             .map_err(|e| SearchError(e.to_string()))?;
+        snippet_generator.set_max_num_chars(70);
         let retrieved_doc = searcher
             .doc(DocAddress {
                 segment_ord: (search_result.segment_ord),
@@ -126,10 +128,8 @@ impl Search {
             .ok_or(SearchError(String::from(
                 "Fatal: Field \"path\" could not be read as text!",
             )))?;
-        let text = self
-            .index
-            .get_page_body(search_result.page, path)
-            .map_err(|e| SearchError(e.to_string()))?;
+        let text = fs::read_to_string(path).map_err(|e| SearchError(e.to_string()))?;
+        // println!("get_preview: got body: {}", text);
 
         // Generate snippet
         let snippet = snippet_generator.snippet(&text);
@@ -150,7 +150,7 @@ impl Search {
         }
 
         result.push_str(&snippet.fragment()[start_from..]);
-        result
+        result.replace('\n', "")
     }
 }
 
@@ -158,42 +158,20 @@ impl Search {
 mod tests {
     use std::panic;
 
-    use litt_shared::test_helpers::{cleanup_dir_and_file, save_fake_pdf_document};
+    use litt_shared::test_helpers::cleanup_litt_files;
 
     use super::*;
-    const TEST_DIR_NAME: &str = "resources";
-    const TEST_DOC_NAME: &str = "test";
-    const TEST_FILE_PATH: &str = "test.pdf";
-    const BODY_1: &str =
-        "A few miles south of Soledad, the Salinas River drops in close to the hillside \
-        bank and runs deep and green. The water is warm too, for it has slipped twinkling \
-        over the yellow sands in the sunlight before reaching the narrow pool.";
-
-    const BODY_2: &str =
-        "On one side of the river the golden foothill slopes curve up to the strong and rocky \
-        Gabilan Mountains, but on the valley side the water is lined with trees—willows \
-        fresh and green with every spring, carrying in their lower leaf junctures the \
-        debris of the winter’s flooding; and sycamores with mottled, white, recumbent \
-        limbs and branches that arch over the pool";
-
-    fn setup() {
-        save_fake_pdf_document(
-            TEST_DIR_NAME,
-            TEST_FILE_PATH,
-            vec![BODY_1.into(), BODY_2.into()],
-        )
-    }
+    const TEST_DIR_NAME: &str = "../resources";
+    const TEST_DOC_NAME: &str = "test.pdf";
 
     fn teardown() {
-        cleanup_dir_and_file(TEST_DIR_NAME, TEST_FILE_PATH);
+        cleanup_litt_files(TEST_DIR_NAME)
     }
 
     fn run_test<T>(test: T)
     where
         T: FnOnce() + panic::UnwindSafe,
     {
-        setup();
-
         let result = panic::catch_unwind(test);
 
         teardown();
@@ -205,6 +183,7 @@ mod tests {
         let search_schema = SearchSchema::default();
         let mut index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
         index.add_all_pdf_documents().unwrap();
+        println!("loaded {} document pages.", &index.searcher().num_docs());
         Search::new(index, search_schema)
     }
 
@@ -219,6 +198,7 @@ mod tests {
     fn test_normal_search(search: &Search) {
         // one-word search returning 1 result with 1 page
         let results = search.search(&String::from("flooding"), 0, 10).unwrap();
+        println!("Got {} results.", results.len());
         assert!(results.contains_key(TEST_DOC_NAME));
         assert_eq!(1, results.get(TEST_DOC_NAME).unwrap().len());
         let first_result = results.get(TEST_DOC_NAME).unwrap().front().unwrap();
