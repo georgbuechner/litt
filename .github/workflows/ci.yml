@@ -16,7 +16,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Dependancies
+    - name: Dependencies
       run: sudo apt-get install poppler-utils
     - name: Build
       run: cargo build --verbose

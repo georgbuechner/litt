@@ -175,7 +175,7 @@ impl Index {
                 // read page-body from generated .txt file
                 let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
-                self.add_pdf_page_to_index(
+                self.add_pdf_page(
                     &dir_entry.path().to_string_lossy(),
                     page_number,
                     &page_path,
@@ -195,7 +195,7 @@ impl Index {
         Ok(())
     }
 
-    fn add_pdf_page_to_index(
+    fn add_pdf_page(
         &self,
         path: &str,
         page_number: u64,
