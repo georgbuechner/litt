@@ -167,7 +167,7 @@ impl Index {
                 .arg(page_path.to_string_lossy().to_string());
 
             let pdf_to_text_output = pdf_to_text_call.output().map_err(|_| {
-                PdfParseError("Make sure pdftotext is installed and set up correctly".into())
+                PdfParseError("Make sure pdftotext is set up correctly and installed (usually part of xpdf (Windows) or poppler (Linux/Mac))".into())
             })?;
             pdf_to_text_successful = pdf_to_text_output.status.success();
 
