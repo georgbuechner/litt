@@ -119,7 +119,7 @@ fn main() -> Result<(), LittError> {
         // do normal search
         else if !cli.term.is_empty() {
             let num_docs = &index.searcher().num_docs();
-            println!("Search index \"{}\" for {}", index_name, cli.term);
+            println!("Search index \"{}\" ({}) for {}", index_name, index_path.to_string_lossy(), cli.term);
             let start = Instant::now();
             let search = Search::new(index, SearchSchema::default());
             let results = search

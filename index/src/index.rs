@@ -73,17 +73,12 @@ impl Index {
     pub fn add_all_pdf_documents(&mut self) -> Result<()> {
         let mut checksum_map = self.open_or_create_checksum_map()
             .map_err(|e| CreationError(e.to_string()))?;
-        println!("Got checksum_map with size {}", checksum_map.len());
         for path in self.get_pdf_dir_entries() {
             let str_path = &path.path().to_string_lossy().to_string();
             if !self.compare_checksum(&str_path, &checksum_map)
                 .map_err(|e| CreationError(e.to_string()))? {
-                println!("{} not in checksum_map", str_path);
                 self.add_pdf_document_pages(&path)?;
                 checksum_map.insert(str_path.into(), 0);
-            }
-            else {
-                println!("{} In checksum_map", str_path);
             }
         }
         self.store_checksum_map(&checksum_map)
@@ -199,7 +194,7 @@ impl Index {
                 let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
                 self.add_pdf_page(
-                    &dir_entry.path().to_string_lossy(),
+                    &dir_entry.path().to_path_buf(),
                     page_number,
                     &page_path,
                     &page_body,
@@ -220,18 +215,19 @@ impl Index {
 
     fn add_pdf_page(
         &self,
-        path: &str,
+        full_path: &PathBuf,
         page_number: u64,
         page_path: &Path,
         page_body: &str,
     ) -> Result<()> {
-        let path = &path[self.documents_path.to_string_lossy().to_string().len() + 1..];
-
+        let relative_path = full_path.strip_prefix(&self.documents_path)
+            .map_err(|e| CreationError(e.to_string()))?;
+        // documents_path base from path
         let mut tantivy_document = TantivyDocument::new();
 
         // add fields to tantivy document
         tantivy_document.add_text(self.schema.path, page_path.to_string_lossy());
-        tantivy_document.add_text(self.schema.title, path);
+        tantivy_document.add_text(self.schema.title, relative_path.to_string_lossy());
         tantivy_document.add_u64(self.schema.page, page_number);
         tantivy_document.add_text(self.schema.body, page_body);
         self.writer
