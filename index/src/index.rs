@@ -166,9 +166,9 @@ impl Index {
                 .arg(full_path_to_pdf.to_string_lossy().to_string())
                 .arg(page_path.to_string_lossy().to_string());
 
-            let pdf_to_text_output_result = pdf_to_text_call.output();
-            let pdf_to_text_output =
-                pdf_to_text_output_result.map_err(|e| PdfParseError(e.to_string()))?;
+            let pdf_to_text_output = pdf_to_text_call.output().map_err(|_| {
+                PdfParseError("Make sure pdftotext is installed and set up correctly".into())
+            })?;
             pdf_to_text_successful = pdf_to_text_output.status.success();
 
             if pdf_to_text_successful {
