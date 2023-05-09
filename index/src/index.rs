@@ -71,18 +71,15 @@ impl Index {
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
     pub fn add_all_pdf_documents(&mut self) -> Result<()> {
-        let mut checksum_map = self.open_or_create_checksum_map()
-            .map_err(|e| CreationError(e.to_string()))?;
+        let mut checksum_map = self.open_or_create_checksum_map()?;
         for path in self.get_pdf_dir_entries() {
             let str_path = &path.path().to_string_lossy().to_string();
-            if !self.compare_checksum(&str_path, &checksum_map)
-                .map_err(|e| CreationError(e.to_string()))? {
+            if !self.compare_checksum(&str_path, &checksum_map).unwrap_or(false) {
                 self.add_pdf_document_pages(&path)?;
-                checksum_map.insert(str_path.into(), 0);
+                _ = self.update_checksum(str_path, &mut checksum_map)?;
             }
         }
-        self.store_checksum_map(&checksum_map)
-            .map_err(|e| CreationError(e.to_string()))?;
+        self.store_checksum_map(&checksum_map)?;
         
 
         // We need to call .commit() explicitly to force the
@@ -151,10 +148,6 @@ impl Index {
 
     /// Add a tantivy document to the index for each page of the pdf document.
     fn add_pdf_document_pages(&self, dir_entry: &DirEntry) -> Result<()> {
-        println!(
-            "add_pdf_document_pages: {}",
-            dir_entry.path().to_string_lossy()
-        );
         // Create custom directory to store all pages:
         let doc_id = Uuid::new_v4();
         let pages_path = self
@@ -260,8 +253,23 @@ impl Index {
             .map_err(|e| CreationError(e.to_string()))
     }
 
+    fn update_checksum(&self, path: &str, checksum_map: &mut HashMap<String, u64>) -> Result<()> {
+        let file = std::fs::File::open(path).map_err(|e| CreationError(e.to_string()))?;
+        let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
+
+        checksum_map.insert(path.to_string(), metadata.len());
+        Ok(())
+    }
+
     fn compare_checksum(&self, path: &str, checksum_map: &HashMap<String, u64>) -> Result<bool> {
-        Ok(checksum_map.contains_key(path))
+        let file = std::fs::File::open(path).map_err(|e| CreationError(e.to_string()))?;
+        let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
+        if let Some(len) = checksum_map.get(path) {
+            Ok(*len == metadata.len())
+        }
+        else {
+            Ok(false)
+        }
     }
 }
 
