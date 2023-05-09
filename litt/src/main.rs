@@ -92,8 +92,19 @@ fn main() -> Result<(), LittError> {
             .map_err(|e| LittError(e.to_string()))?;
         let mut index = Index::open_or_create(index_path.clone(), SearchSchema::default())
             .map_err(|e| LittError(e.to_string()))?;
-
         // update existing index
+        if cli.update {
+            println!("Updating index \"{}\".", index_name);
+            let start = Instant::now();
+            _ = index.add_all_pdf_documents().map_err(|e| LittError(e.to_string()));
+            println!(
+                "Update done. Now: {} document pages in {:?}",
+                index.searcher().num_docs(),
+                start.elapsed()
+            );
+            return Ok(());
+        }
+        // reload existing index
         if cli.reload {
             println!("Reloading index \"{}\".", index_name);
             let start = Instant::now();

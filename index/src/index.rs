@@ -4,6 +4,7 @@ use crate::LittIndexError::{
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
+use std::collections::HashMap;
 use std::convert::AsRef;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,8 @@ use walkdir::{DirEntry, WalkDir};
 
 const INDEX_DIRECTORY_NAME: &str = "index";
 const PAGES_DIRECTORY_NAME: &str = "pages";
+const CHECK_SUM_MAP_FILENAME: &str = "checksum.json";
+
 /// The total target memory usage that will be split between a given number of threads
 const TARGET_MEMORY_BYTES: usize = 100_000_000;
 
@@ -68,9 +71,25 @@ impl Index {
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
     pub fn add_all_pdf_documents(&mut self) -> Result<()> {
+        let mut checksum_map = self.open_or_create_checksum_map()
+            .map_err(|e| CreationError(e.to_string()))?;
+        println!("Got checksum_map with size {}", checksum_map.len());
         for path in self.get_pdf_dir_entries() {
-            self.add_pdf_document_pages(&path)?;
+            let str_path = &path.path().to_string_lossy().to_string();
+            if !self.compare_checksum(&str_path, &checksum_map)
+                .map_err(|e| CreationError(e.to_string()))? {
+                println!("{} not in checksum_map", str_path);
+                self.add_pdf_document_pages(&path)?;
+                checksum_map.insert(str_path.into(), 0);
+            }
+            else {
+                println!("{} In checksum_map", str_path);
+            }
         }
+        self.store_checksum_map(&checksum_map)
+            .map_err(|e| CreationError(e.to_string()))?;
+        
+
         // We need to call .commit() explicitly to force the
         // index_writer to finish processing the documents in the queue,
         // flush the current index to the disk, and advertise
@@ -88,6 +107,10 @@ impl Index {
         self.writer
             .delete_all_documents()
             .map_err(|e| UpdateError(e.to_string()))?;
+        let checksum_map = PathBuf::from(&self.documents_path)
+            .join(LITT_DIRECTORY_NAME)
+            .join(CHECK_SUM_MAP_FILENAME);
+        _ = std::fs::remove_file(checksum_map);
         self.add_all_pdf_documents()
     }
 
@@ -216,6 +239,34 @@ impl Index {
             .map_err(|e| WriteError(e.to_string()))?;
         Ok(())
     }
+
+    fn open_or_create_checksum_map(&self) -> Result<HashMap<String, u64>>{
+        let path = self.documents_path
+            .join(LITT_DIRECTORY_NAME)
+            .join(CHECK_SUM_MAP_FILENAME);
+        if Path::new(&path).exists() {
+            let data = std::fs::read_to_string(path)
+                    .map_err(|e| CreationError(e.to_string()))?;
+
+            Ok(serde_json::from_str(&data)
+                .map_err(|e| CreationError(e.to_string()))?)
+        }
+        else {
+            Ok(HashMap::new())
+        }
+    }
+
+    fn store_checksum_map(&self, checksum_map: &HashMap<String, u64>) -> Result<()> {
+        let path = self.documents_path
+            .join(LITT_DIRECTORY_NAME)
+            .join(CHECK_SUM_MAP_FILENAME);
+        std::fs::write(path, serde_json::to_string(&checksum_map).unwrap())
+            .map_err(|e| CreationError(e.to_string()))
+    }
+
+    fn compare_checksum(&self, path: &str, checksum_map: &HashMap<String, u64>) -> Result<bool> {
+        Ok(checksum_map.contains_key(path))
+    }
 }
 
 #[cfg(test)]
@@ -305,7 +356,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_update() {
+    fn test_reload() {
         run_test(|| {
             let mut index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
             // index 1st test document
@@ -315,6 +366,23 @@ mod tests {
             // save 2nd document and update
             save_fake_pdf_document(TEST_DIR_NAME, "test2.pdf", vec!["Hello, world 2".into()]);
             index.reload().unwrap();
+
+            assert_eq!(2, index.searcher().num_docs());
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn test_update() {
+        run_test(|| {
+            let mut index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            // index 1st test document
+            index.add_all_pdf_documents().unwrap();
+            assert_eq!(1, index.searcher().num_docs());
+
+            // save 2nd document and update
+            save_fake_pdf_document(TEST_DIR_NAME, "test2.pdf", vec!["Hello, world 2".into()]);
+            index.add_all_pdf_documents().unwrap();
 
             assert_eq!(2, index.searcher().num_docs());
         });
