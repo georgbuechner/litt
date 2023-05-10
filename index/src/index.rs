@@ -9,6 +9,7 @@ use std::convert::AsRef;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
@@ -74,13 +75,15 @@ impl Index {
         let mut checksum_map = self.open_or_create_checksum_map()?;
         for path in self.get_pdf_dir_entries() {
             let str_path = &path.path().to_string_lossy().to_string();
-            if !self.compare_checksum(&str_path, &checksum_map).unwrap_or(false) {
+            if !self
+                .compare_checksum(str_path, &checksum_map)
+                .unwrap_or(false)
+            {
                 self.add_pdf_document_pages(&path)?;
-                _ = self.update_checksum(str_path, &mut checksum_map)?;
+                self.update_checksum(str_path, &mut checksum_map)?;
             }
         }
         self.store_checksum_map(&checksum_map)?;
-        
 
         // We need to call .commit() explicitly to force the
         // index_writer to finish processing the documents in the queue,
@@ -186,12 +189,7 @@ impl Index {
                 // read page-body from generated .txt file
                 let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
-                self.add_pdf_page(
-                    &dir_entry.path().to_path_buf(),
-                    page_number,
-                    &page_path,
-                    &page_body,
-                )?;
+                self.add_pdf_page(dir_entry.path(), page_number, &page_path, &page_body)?;
             }
         }
 
@@ -208,12 +206,13 @@ impl Index {
 
     fn add_pdf_page(
         &self,
-        full_path: &PathBuf,
+        full_path: &Path,
         page_number: u64,
         page_path: &Path,
         page_body: &str,
     ) -> Result<()> {
-        let relative_path = full_path.strip_prefix(&self.documents_path)
+        let relative_path = full_path
+            .strip_prefix(&self.documents_path)
             .map_err(|e| CreationError(e.to_string()))?;
         // documents_path base from path
         let mut tantivy_document = TantivyDocument::new();
@@ -229,45 +228,59 @@ impl Index {
         Ok(())
     }
 
-    fn open_or_create_checksum_map(&self) -> Result<HashMap<String, u64>>{
-        let path = self.documents_path
+    fn open_or_create_checksum_map(&self) -> Result<HashMap<String, (u64, SystemTime)>> {
+        let path = self
+            .documents_path
             .join(LITT_DIRECTORY_NAME)
             .join(CHECK_SUM_MAP_FILENAME);
         if Path::new(&path).exists() {
-            let data = std::fs::read_to_string(path)
-                    .map_err(|e| CreationError(e.to_string()))?;
+            let data = std::fs::read_to_string(path).map_err(|e| CreationError(e.to_string()))?;
 
-            Ok(serde_json::from_str(&data)
-                .map_err(|e| CreationError(e.to_string()))?)
-        }
-        else {
+            Ok(serde_json::from_str(&data).map_err(|e| CreationError(e.to_string()))?)
+        } else {
             Ok(HashMap::new())
         }
     }
 
-    fn store_checksum_map(&self, checksum_map: &HashMap<String, u64>) -> Result<()> {
-        let path = self.documents_path
+    fn store_checksum_map(&self, checksum_map: &HashMap<String, (u64, SystemTime)>) -> Result<()> {
+        let path = self
+            .documents_path
             .join(LITT_DIRECTORY_NAME)
             .join(CHECK_SUM_MAP_FILENAME);
         std::fs::write(path, serde_json::to_string(&checksum_map).unwrap())
             .map_err(|e| CreationError(e.to_string()))
     }
 
-    fn update_checksum(&self, path: &str, checksum_map: &mut HashMap<String, u64>) -> Result<()> {
+    fn update_checksum(
+        &self,
+        path: &str,
+        checksum_map: &mut HashMap<String, (u64, SystemTime)>,
+    ) -> Result<()> {
         let file = std::fs::File::open(path).map_err(|e| CreationError(e.to_string()))?;
         let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
+        let modified = metadata
+            .modified()
+            .map_err(|e| CreationError(e.to_string()))?;
 
-        checksum_map.insert(path.to_string(), metadata.len());
+        checksum_map.insert(path.to_string(), (metadata.len(), modified));
         Ok(())
     }
 
-    fn compare_checksum(&self, path: &str, checksum_map: &HashMap<String, u64>) -> Result<bool> {
+    fn compare_checksum(
+        &self,
+        path: &str,
+        checksum_map: &HashMap<String, (u64, SystemTime)>,
+    ) -> Result<bool> {
+        println!("Checking of {} exists", path);
         let file = std::fs::File::open(path).map_err(|e| CreationError(e.to_string()))?;
         let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
-        if let Some(len) = checksum_map.get(path) {
-            Ok(*len == metadata.len())
-        }
-        else {
+        let modified = metadata
+            .modified()
+            .map_err(|e| CreationError(e.to_string()))?;
+
+        if let Some((len, last_modified)) = checksum_map.get(path) {
+            Ok(*len == metadata.len() && *last_modified == modified)
+        } else {
             Ok(false)
         }
     }

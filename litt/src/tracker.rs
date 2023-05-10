@@ -3,6 +3,10 @@ use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 
+use litt_shared::LITT_DIRECTORY_NAME;
+
+const INDICIES_FILENAME: &str = "indices.json";
+
 #[derive(Debug)]
 pub enum LittIndexTrackerError {
     UnknownError(String),
@@ -34,9 +38,15 @@ pub struct IndexTracker {
 
 impl IndexTracker {
     pub fn create(_path: String) -> Result<Self> {
-        // TODO use path buf and join paths (windows file system compatibility)
-        let litt_root = shellexpand::tilde("~/.litt/").to_string();
-        let litt_json = shellexpand::tilde("~/.litt/indices.json").to_string();
+        let base_path = PathBuf::new().join("~/").join(LITT_DIRECTORY_NAME);
+        let litt_root = shellexpand::tilde(&base_path.to_string_lossy().to_string()).to_string();
+        let litt_json = shellexpand::tilde(
+            &base_path
+                .join(INDICIES_FILENAME)
+                .to_string_lossy()
+                .to_string(),
+        )
+        .to_string();
 
         // Check if stored litt indices json already exists
         if Path::new(&litt_json).exists() {
@@ -66,29 +76,21 @@ impl IndexTracker {
             .find_map(|(_, val)| if val == path { Some(true) } else { None })
     }
 
-    pub fn add(mut self, name: String, path: impl AsRef<Path>) -> Result<()> {
-        let litt_json = shellexpand::tilde("~/.litt/indices.json").to_string();
+    pub fn add(&mut self, name: String, path: impl AsRef<Path>) -> Result<()> {
         let documents_path = PathBuf::from(path.as_ref());
         self.indices.insert(name, documents_path);
-        // TODO get rid of unwrap
-        std::fs::write(litt_json, serde_json::to_string(&self.indices).unwrap())
-            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
+        self.store_indicies()
     }
 
     pub fn remove(mut self, name: String) -> Result<()> {
         self.indices.remove(&name);
-        let litt_json = shellexpand::tilde("~/.litt/indices.json").to_string();
-        // TODO get rid of unwrap
-        std::fs::write(litt_json, serde_json::to_string(&self.indices).unwrap())
-            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
+        self.store_indicies()
     }
 
     pub fn get_path(&self, name: &str) -> Result<PathBuf> {
-        if self.exists(name) {
-            // TODO get rid of unwrap
-            Ok(self.indices.get(name).unwrap().into())
-        } else {
-            Err(LittIndexTrackerError::NotFound(name.into()))
+        match self.indices.get(name) {
+            Some(path) => Ok(path.into()),
+            None => Err(LittIndexTrackerError::NotFound(name.into())),
         }
     }
 
@@ -103,7 +105,19 @@ impl IndexTracker {
         })
     }
 
-    pub fn all(self) -> Result<HashMap<String, PathBuf>> {
-        Ok(self.indices)
+    pub fn all(&self) -> Result<HashMap<String, PathBuf>> {
+        Ok(self.indices.clone())
+    }
+
+    fn store_indicies(&self) -> Result<()> {
+        let base_path = PathBuf::new()
+            .join("~/")
+            .join(LITT_DIRECTORY_NAME)
+            .join(INDICIES_FILENAME);
+        let litt_json = shellexpand::tilde(&base_path.to_string_lossy().to_string()).to_string();
+        let indices_str = serde_json::to_string(&self.indices)
+            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))?;
+        std::fs::write(litt_json, indices_str)
+            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
     }
 }
