@@ -6,6 +6,7 @@ use std::{fmt, fs};
 use litt_shared::LITT_DIRECTORY_NAME;
 
 const INDICIES_FILENAME: &str = "indices.json";
+const FAST_RESULTS_FILENAME: &str = "last_results.json";
 
 #[derive(Debug)]
 pub enum LittIndexTrackerError {
@@ -40,7 +41,7 @@ impl IndexTracker {
     pub fn create(_path: String) -> Result<Self> {
         let base_path = PathBuf::new().join("~/").join(LITT_DIRECTORY_NAME);
         let litt_root = shellexpand::tilde(&base_path.to_string_lossy().to_string()).to_string();
-        let litt_json = shellexpand::tilde(
+        let json_path = shellexpand::tilde(
             &base_path
                 .join(INDICIES_FILENAME)
                 .to_string_lossy()
@@ -49,9 +50,9 @@ impl IndexTracker {
         .to_string();
 
         // Check if stored litt indices json already exists
-        if Path::new(&litt_json).exists() {
+        if Path::new(&json_path).exists() {
             // load json
-            let data = fs::read_to_string(litt_json)
+            let data = fs::read_to_string(json_path)
                 .map_err(|e| LittIndexTrackerError::UnknownError(e.to_string()))?;
             let indices: HashMap<String, PathBuf> = serde_json::from_str(&data)
                 .map_err(|e| LittIndexTrackerError::UnknownError(e.to_string()))?;
@@ -109,15 +110,41 @@ impl IndexTracker {
         Ok(self.indices.clone())
     }
 
+    pub fn store_fast_results(&self, fast_results: HashMap<u32, (String, u32, String)>) -> Result<()> {
+        let base_path = PathBuf::new()
+            .join("~/")
+            .join(LITT_DIRECTORY_NAME)
+            .join(FAST_RESULTS_FILENAME);
+        let json_path = shellexpand::tilde(&base_path.to_string_lossy().to_string()).to_string();
+        let json_str = serde_json::to_string(&fast_results)
+            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))?;
+        std::fs::write(json_path, json_str)
+            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
+    }
+
+    pub fn load_fast_results(&self) -> Result<HashMap<u32, (String, u32, String)>> {
+        let base_path = PathBuf::new()
+            .join("~/")
+            .join(LITT_DIRECTORY_NAME)
+            .join(FAST_RESULTS_FILENAME);
+        let json_path = shellexpand::tilde(&base_path.to_string_lossy().to_string()).to_string();
+        let data = fs::read_to_string(json_path)
+            .map_err(|e| LittIndexTrackerError::UnknownError(e.to_string()))?;
+        let fast_results: HashMap<u32, (String, u32, String)> = serde_json::from_str(&data)
+            .map_err(|e| LittIndexTrackerError::UnknownError(e.to_string()))?;
+        Ok(fast_results)
+    }
+
     fn store_indicies(&self) -> Result<()> {
         let base_path = PathBuf::new()
             .join("~/")
             .join(LITT_DIRECTORY_NAME)
             .join(INDICIES_FILENAME);
-        let litt_json = shellexpand::tilde(&base_path.to_string_lossy().to_string()).to_string();
-        let indices_str = serde_json::to_string(&self.indices)
+        let json_path = shellexpand::tilde(&base_path.to_string_lossy().to_string()).to_string();
+        let json_str = serde_json::to_string(&self.indices)
             .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))?;
-        std::fs::write(litt_json, indices_str)
+        std::fs::write(json_path, json_str)
             .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
     }
+
 }

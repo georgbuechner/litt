@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::env;
 use std::fmt;
 use std::fmt::Formatter;
 use std::fs;
@@ -31,13 +33,49 @@ impl fmt::Display for LittError {
     }
 }
 
-fn main() -> Result<(), LittError> {
-    let cli = Cli::parse();
+fn get_first_term(query: &str) -> String {
+    let parts = query.split(" ").collect::<Vec<&str>>();
+    if let Some(first_str) = parts.first() {
+        if first_str.chars().next().unwrap() == '"' {
+            return first_str[1..].to_string()
+        }
+        return first_str.to_string()
+    } else {
+        return "".to_string()
+    }
+}
 
+fn main() -> Result<(), LittError> {
     let mut index_tracker = match IndexTracker::create(".litt".into()) {
         Ok(index_tracker) => index_tracker,
         Err(e) => return Err(LittError(e.to_string())),
     };
+
+    // Check for fast last-number access 
+    let args: Vec<String> = env::args().collect();
+    match &args[1].trim().parse::<u32>() {
+        Ok(last_result) => {
+            let fast_results = match index_tracker.load_fast_results() {
+                Ok(fast_results) => fast_results,
+                Err(e) => return Err(LittError(e.to_string())),
+            };
+            let path = fast_results.get(last_result)
+                .expect("Number not in last results");
+            println!("Got path: {}", path.0);
+            let mut cmd = open::with_command(&path.0, "zathura");
+            cmd.arg("-P")
+                .arg(&path.1.to_string())
+                .arg("-f")
+                .arg(&path.2);
+            if let Err(e) = cmd.output() {
+                return Err(LittError(e.to_string()))
+            }
+            return Ok(());
+        }
+        Err(_) => { }
+    }
+
+    let cli = Cli::parse();
 
     // everything that does not require litt index
 
@@ -170,7 +208,10 @@ fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError(e.to_string())),
         };
         println!("Found results in {} document(s):", results.len());
+        let mut fast_store_results: HashMap<u32, (String, u32, String)> = HashMap::new();
+        let first_query_term = get_first_term(&cli.term);
         let mut counter = 0;
+        let mut res_counter = 1;
         for (title, pages) in &results {
             counter += 1;
             let title_name = Path::new(title)
@@ -181,17 +222,23 @@ fn main() -> Result<(), LittError> {
             let index_path = index_path.join(title);
             println!("   ({})", index_path.to_string_lossy().italic());
             for page in pages {
+                fast_store_results.insert(res_counter, (index_path.to_string_lossy().to_string(), page.page, first_query_term.clone()));
                 let preview = match search.get_preview(page, &cli.term) {
                     Ok(preview) => preview,
                     Err(e) => return Err(LittError(e.to_string())),
                 };
                 println!(
-                    "  - p.{}: \"{}\", (score: {})",
+                    "  - [{}] p.{}: \"{}\", (score: {})",
+                    res_counter,
                     page.page,
                     preview.italic(),
                     page.score
                 );
+                res_counter += 1;
             }
+        }
+        if let Err(e) = index_tracker.store_fast_results(fast_store_results) {
+            return Err(LittError(e.to_string()));
         }
         println!(
             "{} results from {} pages in {:?}.",
