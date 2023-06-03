@@ -56,16 +56,11 @@ fn main() -> Result<(), LittError> {
     }
 
     // check if name of litt index was given by user
-    if cli.litt_index.is_none() {
-        if let Err(e) = Cli::command().print_help() {
-            return Err(LittError(e.to_string()));
-        }
-        return Err(LittError("Litt index missing!".into()));
-    }
-
-    let index_name = cli
-        .litt_index
-        .expect("Unkown error when getting name from index");
+    let index_name = match cli.litt_index {
+        None => {Cli::command().print_help().map_err(|e| LittError(e.to_string()))?;
+            return Err(LittError("Litt index missing!".into()));}
+        Some(index_name) => index_name
+    };
 
     // initialize new index
     if !cli.init.is_empty() {
@@ -117,10 +112,7 @@ fn main() -> Result<(), LittError> {
     }
 
     // get index:
-    let index_path = match index_tracker.get_path(&index_name) {
-        Ok(index_path) => index_path,
-        Err(e) => return Err(LittError(e.to_string())),
-    };
+    let index_path = index_tracker.get_path(&index_name).map_err(|e| LittError(e.to_string()))?;
     let mut index = match Index::open_or_create(index_path.clone(), SearchSchema::default()) {
         Ok(index) => index,
         Err(e) => return Err(LittError(e.to_string())),
