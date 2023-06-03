@@ -110,7 +110,10 @@ impl IndexTracker {
         Ok(self.indices.clone())
     }
 
-    pub fn store_fast_results(&self, fast_results: HashMap<u32, (String, u32, String)>) -> Result<()> {
+    pub fn store_fast_results(
+        &self,
+        fast_results: HashMap<u32, (String, u32, String)>,
+    ) -> Result<()> {
         let base_path = PathBuf::new()
             .join("~/")
             .join(LITT_DIRECTORY_NAME)
@@ -146,5 +149,4 @@ impl IndexTracker {
         std::fs::write(json_path, json_str)
             .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
     }
-
 }

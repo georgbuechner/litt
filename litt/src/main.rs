@@ -34,14 +34,14 @@ impl fmt::Display for LittError {
 }
 
 fn get_first_term(query: &str) -> String {
-    let parts = query.split(" ").collect::<Vec<&str>>();
+    let parts = query.split(' ').collect::<Vec<_>>();
     if let Some(first_str) = parts.first() {
-        if first_str.chars().next().unwrap() == '"' {
-            return first_str[1..].to_string()
+        if let Some(stripped) = first_str.strip_prefix('\"') {
+            return stripped.to_string();
         }
-        return first_str.to_string()
+        first_str.to_string()
     } else {
-        return "".to_string()
+        "".to_string()
     }
 }
 
@@ -51,15 +51,17 @@ fn main() -> Result<(), LittError> {
         Err(e) => return Err(LittError(e.to_string())),
     };
 
-    // Check for fast last-number access 
+    // Check for fast last-number access
     let args: Vec<String> = env::args().collect();
-    match &args[1].trim().parse::<u32>() {
-        Ok(last_result) => {
+    let first_arg_option = args.get(1);
+    if let Some(first_arg) = first_arg_option {
+        if let Ok(last_result) = &first_arg.trim().parse::<u32>() {
             let fast_results = match index_tracker.load_fast_results() {
                 Ok(fast_results) => fast_results,
                 Err(e) => return Err(LittError(e.to_string())),
             };
-            let path = fast_results.get(last_result)
+            let path = fast_results
+                .get(last_result)
                 .expect("Number not in last results");
             println!("Got path: {}", path.0);
             let mut cmd = open::with_command(&path.0, "zathura");
@@ -67,12 +69,29 @@ fn main() -> Result<(), LittError> {
                 .arg(&path.1.to_string())
                 .arg("-f")
                 .arg(&path.2);
+
             if let Err(e) = cmd.output() {
-                return Err(LittError(e.to_string()))
+                return Err(LittError(e.to_string()));
             }
+
+            let zathura_was_successful = match cmd.status() {
+                Ok(status) => match status.code() {
+                    None => false,
+                    Some(code) => code == 0,
+                },
+                Err(_) => false,
+            };
+
+            if !zathura_was_successful {
+                println!(
+                    "Consider installing zathura so we can open the PDF on the correct page for you.\n\
+                    Using standard system PDF viewer..."
+                );
+                open::that_in_background(&path.0);
+            }
+
             return Ok(());
         }
-        Err(_) => { }
     }
 
     let cli = Cli::parse();
@@ -220,7 +239,14 @@ fn main() -> Result<(), LittError> {
             let index_path = index_path.join(title);
             println!("   ({})", index_path.to_string_lossy().italic());
             for page in pages {
-                fast_store_results.insert(res_counter, (index_path.to_string_lossy().to_string(), page.page, first_query_term.clone()));
+                fast_store_results.insert(
+                    res_counter,
+                    (
+                        index_path.to_string_lossy().to_string(),
+                        page.page,
+                        first_query_term.clone(),
+                    ),
+                );
                 let preview = match search.get_preview(page, &cli.term) {
                     Ok(preview) => preview,
                     Err(e) => return Err(LittError(e.to_string())),
