@@ -9,6 +9,7 @@ edition = "2021"
 tantivy = { workspace = true }
 lopdf = { workspace = true }
 uuid = { workspace = true }
+serde_json = { workspace = true }
 walkdir = "2.3.3"
 litt_shared = { path = "../shared" }
 

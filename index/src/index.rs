@@ -4,10 +4,12 @@ use crate::LittIndexError::{
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
+use std::collections::HashMap;
 use std::convert::AsRef;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
@@ -16,6 +18,8 @@ use walkdir::{DirEntry, WalkDir};
 
 const INDEX_DIRECTORY_NAME: &str = "index";
 const PAGES_DIRECTORY_NAME: &str = "pages";
+const CHECK_SUM_MAP_FILENAME: &str = "checksum.json";
+
 /// The total target memory usage that will be split between a given number of threads
 const TARGET_MEMORY_BYTES: usize = 100_000_000;
 
@@ -68,9 +72,19 @@ impl Index {
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
     pub fn add_all_pdf_documents(&mut self) -> Result<()> {
+        let mut checksum_map = self.open_or_create_checksum_map()?;
         for path in self.get_pdf_dir_entries() {
-            self.add_pdf_document_pages(&path)?;
+            let str_path = &path.path().to_string_lossy().to_string();
+            if !self
+                .compare_checksum(str_path, &checksum_map)
+                .unwrap_or(false)
+            {
+                self.add_pdf_document_pages(&path)?;
+                self.update_checksum(str_path, &mut checksum_map)?;
+            }
         }
+        self.store_checksum_map(&checksum_map)?;
+
         // We need to call .commit() explicitly to force the
         // index_writer to finish processing the documents in the queue,
         // flush the current index to the disk, and advertise
@@ -88,6 +102,10 @@ impl Index {
         self.writer
             .delete_all_documents()
             .map_err(|e| UpdateError(e.to_string()))?;
+        let checksum_map = PathBuf::from(&self.documents_path)
+            .join(LITT_DIRECTORY_NAME)
+            .join(CHECK_SUM_MAP_FILENAME);
+        _ = std::fs::remove_file(checksum_map);
         self.add_all_pdf_documents()
     }
 
@@ -133,10 +151,6 @@ impl Index {
 
     /// Add a tantivy document to the index for each page of the pdf document.
     fn add_pdf_document_pages(&self, dir_entry: &DirEntry) -> Result<()> {
-        println!(
-            "add_pdf_document_pages: {}",
-            dir_entry.path().to_string_lossy()
-        );
         // Create custom directory to store all pages:
         let doc_id = Uuid::new_v4();
         let pages_path = self
@@ -175,12 +189,7 @@ impl Index {
                 // read page-body from generated .txt file
                 let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
-                self.add_pdf_page(
-                    &dir_entry.path().to_string_lossy(),
-                    page_number,
-                    &page_path,
-                    &page_body,
-                )?;
+                self.add_pdf_page(dir_entry.path(), page_number, &page_path, &page_body)?;
             }
         }
 
@@ -197,24 +206,83 @@ impl Index {
 
     fn add_pdf_page(
         &self,
-        path: &str,
+        full_path: &Path,
         page_number: u64,
         page_path: &Path,
         page_body: &str,
     ) -> Result<()> {
-        let path = &path[self.documents_path.to_string_lossy().to_string().len() + 1..];
-
+        let relative_path = full_path
+            .strip_prefix(&self.documents_path)
+            .map_err(|e| CreationError(e.to_string()))?;
+        // documents_path base from path
         let mut tantivy_document = TantivyDocument::new();
 
         // add fields to tantivy document
         tantivy_document.add_text(self.schema.path, page_path.to_string_lossy());
-        tantivy_document.add_text(self.schema.title, path);
+        tantivy_document.add_text(self.schema.title, relative_path.to_string_lossy());
         tantivy_document.add_u64(self.schema.page, page_number);
         tantivy_document.add_text(self.schema.body, page_body);
         self.writer
             .add_document(tantivy_document)
             .map_err(|e| WriteError(e.to_string()))?;
         Ok(())
+    }
+
+    fn open_or_create_checksum_map(&self) -> Result<HashMap<String, (u64, SystemTime)>> {
+        let path = self
+            .documents_path
+            .join(LITT_DIRECTORY_NAME)
+            .join(CHECK_SUM_MAP_FILENAME);
+        if Path::new(&path).exists() {
+            let data = std::fs::read_to_string(path).map_err(|e| CreationError(e.to_string()))?;
+
+            Ok(serde_json::from_str(&data).map_err(|e| CreationError(e.to_string()))?)
+        } else {
+            Ok(HashMap::new())
+        }
+    }
+
+    fn store_checksum_map(&self, checksum_map: &HashMap<String, (u64, SystemTime)>) -> Result<()> {
+        let path = self
+            .documents_path
+            .join(LITT_DIRECTORY_NAME)
+            .join(CHECK_SUM_MAP_FILENAME);
+        std::fs::write(path, serde_json::to_string(&checksum_map).unwrap())
+            .map_err(|e| CreationError(e.to_string()))
+    }
+
+    fn update_checksum(
+        &self,
+        path: &str,
+        checksum_map: &mut HashMap<String, (u64, SystemTime)>,
+    ) -> Result<()> {
+        let file = std::fs::File::open(path).map_err(|e| CreationError(e.to_string()))?;
+        let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
+        let modified = metadata
+            .modified()
+            .map_err(|e| CreationError(e.to_string()))?;
+
+        checksum_map.insert(path.to_string(), (metadata.len(), modified));
+        Ok(())
+    }
+
+    fn compare_checksum(
+        &self,
+        path: &str,
+        checksum_map: &HashMap<String, (u64, SystemTime)>,
+    ) -> Result<bool> {
+        println!("Checking of {} exists", path);
+        let file = std::fs::File::open(path).map_err(|e| CreationError(e.to_string()))?;
+        let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
+        let modified = metadata
+            .modified()
+            .map_err(|e| CreationError(e.to_string()))?;
+
+        if let Some((len, last_modified)) = checksum_map.get(path) {
+            Ok(*len == metadata.len() && *last_modified == modified)
+        } else {
+            Ok(false)
+        }
     }
 }
 
@@ -305,7 +373,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_update() {
+    fn test_reload() {
         run_test(|| {
             let mut index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
             // index 1st test document
@@ -315,6 +383,23 @@ mod tests {
             // save 2nd document and update
             save_fake_pdf_document(TEST_DIR_NAME, "test2.pdf", vec!["Hello, world 2".into()]);
             index.reload().unwrap();
+
+            assert_eq!(2, index.searcher().num_docs());
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn test_update() {
+        run_test(|| {
+            let mut index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            // index 1st test document
+            index.add_all_pdf_documents().unwrap();
+            assert_eq!(1, index.searcher().num_docs());
+
+            // save 2nd document and update
+            save_fake_pdf_document(TEST_DIR_NAME, "test2.pdf", vec!["Hello, world 2".into()]);
+            index.add_all_pdf_documents().unwrap();
 
             assert_eq!(2, index.searcher().num_docs());
         });
