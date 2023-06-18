@@ -129,7 +129,6 @@ impl Search {
                 "Fatal: Field \"path\" could not be read as text!",
             )))?;
         let text = fs::read_to_string(path).map_err(|e| SearchError(e.to_string()))?;
-        // println!("get_preview: got body: {}", text);
 
         // Generate snippet
         let snippet = snippet_generator.snippet(&text);

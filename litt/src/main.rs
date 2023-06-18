@@ -184,28 +184,32 @@ fn main() -> Result<(), LittError> {
     // update existing index
     if cli.update {
         println!("Updating index \"{}\".", index_name);
+        let old_num_docs = index.searcher().num_docs();
         let start = Instant::now();
         if let Err(e) = index.add_all_pdf_documents() {
             return Err(LittError(e.to_string()));
         }
         println!(
-            "Update done. Now: {} document pages in {:?}",
+            "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
+            index.searcher().num_docs()-old_num_docs,
+            start.elapsed(),
             index.searcher().num_docs(),
-            start.elapsed()
         );
         return Ok(());
     }
     // reload existing index
     if cli.reload {
         println!("Reloading index \"{}\".", index_name);
+        let old_num_docs = index.searcher().num_docs();
         let start = Instant::now();
         if let Err(e) = index.reload() {
             return Err(LittError(e.to_string()));
         }
         println!(
-            "Reload done. Successfully indexed {} document pages in {:?}",
+            "Reload done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
+            index.searcher().num_docs()-old_num_docs,
+            start.elapsed(),
             index.searcher().num_docs(),
-            start.elapsed()
         );
         return Ok(());
     }
