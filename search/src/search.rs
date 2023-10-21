@@ -208,7 +208,7 @@ mod tests {
             ("\"limbs branches\"", vec![]),
             ("\"limbs branches\"~1", vec![2]),
             ("Bär", vec![1]),
-            ("Bär Hündin", vec![1])
+            ("Bär Hündin", vec![1]),
         ]);
         // one-word search returning 1 result with 1 page
         for (search_term, pages) in &test_cases {
@@ -218,7 +218,7 @@ mod tests {
                 let doc_results = results.get(TEST_DOC_NAME).unwrap();
                 assert_eq!(pages.len(), doc_results.len());
                 for page in pages {
-                    assert!(doc_results.iter().any(|result| result.page == *page)); 
+                    assert!(doc_results.iter().any(|result| result.page == *page));
                 }
             } else {
                 assert!(!results.contains_key(TEST_DOC_NAME));
