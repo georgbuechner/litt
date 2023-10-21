@@ -64,8 +64,9 @@ fn main() -> Result<(), LittError> {
                 .get(last_result)
                 .expect("Number not in last results");
             println!("Got path: {}", path.0);
-            let mut cmd = open::with_command(&path.0, "zathura");
-            cmd.arg("-P")
+            let mut cmd = std::process::Command::new("zathura");
+            cmd.arg(&path.0)
+                .arg("-P")
                 .arg(&path.1.to_string())
                 .arg("-f")
                 .arg(&path.2);
@@ -85,9 +86,22 @@ fn main() -> Result<(), LittError> {
             if !zathura_was_successful {
                 println!(
                     "Consider installing zathura so we can open the PDF on the correct page for you.\n\
-                    Using standard system PDF viewer..."
+        Using standard system PDF viewer..."
                 );
-                open::that_in_background(&path.0);
+                #[cfg(unix)]
+                std::process::Command::new("open")
+                    .arg(&path.0)
+                    .spawn()
+                    .map_err(|e| LittError(e.to_string()))?;
+
+                #[cfg(windows)]
+                std::process::Command::new("cmd")
+                    .arg("/c")
+                    .arg("start")
+                    .arg(&path.0)
+                    .spawn()
+                    .map_err(|e| LittError(e.to_string()))?;
+
             }
 
             return Ok(());
