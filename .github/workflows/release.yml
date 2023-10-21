@@ -57,3 +57,4 @@ jobs:
           asset_path: ./target/${{ matrix.target }}/release/litt
           asset_name: litt-${{ matrix.os }}
           asset_content_type: application/octet-stream
+
