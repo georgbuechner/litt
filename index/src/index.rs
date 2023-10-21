@@ -83,12 +83,12 @@ impl Index {
                 .compare_checksum(str_path, &checksum_map)
                 .unwrap_or(false)
             {
-                println!("Adding document: {}", relative_path.to_string_lossy().to_string());
+                println!("Adding document: {}", relative_path.to_string_lossy());
                 self.add_pdf_document_pages(&path)?;
                 self.update_checksum(str_path, &mut checksum_map)?;
             }
             else {
-                println!("Skipped (already exists): {}", relative_path.to_string_lossy().to_string());
+                println!("Skipped (already exists): {}", relative_path.to_string_lossy());
             }
         }
         self.store_checksum_map(&checksum_map)?;
