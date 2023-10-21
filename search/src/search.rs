@@ -1,7 +1,8 @@
 use std::collections::{HashMap, LinkedList};
 use std::fs;
 use tantivy::collector::TopDocs;
-use tantivy::{DocAddress, Score, Snippet, SnippetGenerator};
+use tantivy::{DocAddress, Score, Snippet, SnippetGenerator, Term};
+use tantivy::query::FuzzyTermQuery;
 
 extern crate litt_index;
 use litt_index::index::Index;
@@ -35,6 +36,11 @@ pub struct Search {
     schema: SearchSchema,
 }
 
+pub enum SearchTerm {
+    Fuzzy(&'static str),
+    Exact(&'static str),
+}
+
 impl Search {
     pub fn new(index: Index, schema: SearchSchema) -> Self {
         Self { index, schema }
@@ -42,25 +48,31 @@ impl Search {
 
     pub fn search(
         &self,
-        input: &str,
+        input: SearchTerm,
         offset: usize,
         limit: usize,
     ) -> Result<HashMap<String, LinkedList<SearchResult>>> {
         let searcher = self.index.searcher();
         let query_parser = self.index.query_parser();
 
-        let query = query_parser
-            .parse_query(input)
-            .map_err(|e| SearchError(e.to_string()))?;
+        let top_docs = match input {
+            SearchTerm::Fuzzy(_) => {}
+            SearchTerm::Exact(term) => {
+                let query = query_parser
+                    .parse_query(term)
+                    .map_err(|e| SearchError(e.to_string()))?;
+                    searcher
+                        .search(&query, &TopDocs::with_limit(limit).and_offset(offset))
+                        .map_err(|e| SearchError(e.to_string()))?;
 
-        // Perform search.
-        // `topdocs` contains the 10 most relevant doc ids, sorted by decreasing scores...
-        let top_docs: Vec<(Score, DocAddress)> = searcher
-            .search(&query, &TopDocs::with_limit(limit).and_offset(offset))
-            .map_err(|e| SearchError(e.to_string()))?;
+            }
+        };
 
         // Assemble results
         let mut results: HashMap<String, LinkedList<SearchResult>> = HashMap::new();
+
+
+
         for (score, doc_address) in top_docs {
             let segment_ord = doc_address.segment_ord;
             let doc_id = doc_address.doc_id;
