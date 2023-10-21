@@ -71,10 +71,6 @@ fn main() -> Result<(), LittError> {
                 .arg("-f")
                 .arg(&path.2);
 
-            if let Err(e) = cmd.output() {
-                return Err(LittError(e.to_string()));
-            }
-
             let zathura_was_successful = match cmd.status() {
                 Ok(status) => match status.code() {
                     None => false,
