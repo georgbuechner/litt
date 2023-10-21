@@ -97,7 +97,6 @@ fn main() -> Result<(), LittError> {
                     .arg(&path.0)
                     .spawn()
                     .map_err(|e| LittError(e.to_string()))?;
-
             }
 
             return Ok(());
