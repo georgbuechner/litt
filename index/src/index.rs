@@ -74,7 +74,8 @@ impl Index {
     pub fn add_all_pdf_documents(&mut self) -> Result<()> {
         let mut checksum_map = self.open_or_create_checksum_map()?;
         for path in self.get_pdf_dir_entries() {
-            let relative_path = path.path()
+            let relative_path = path
+                .path()
                 .strip_prefix(&self.documents_path)
                 .map_err(|e| CreationError(e.to_string()))?;
 
@@ -83,12 +84,14 @@ impl Index {
                 .compare_checksum(str_path, &checksum_map)
                 .unwrap_or(false)
             {
-                println!("Adding document: {}", relative_path.to_string_lossy().to_string());
+                println!("Adding document: {}", relative_path.to_string_lossy());
                 self.add_pdf_document_pages(&path)?;
                 self.update_checksum(str_path, &mut checksum_map)?;
-            }
-            else {
-                println!("Skipped (already exists): {}", relative_path.to_string_lossy().to_string());
+            } else {
+                println!(
+                    "Skipped (already exists): {}",
+                    relative_path.to_string_lossy()
+                );
             }
         }
         self.store_checksum_map(&checksum_map)?;
