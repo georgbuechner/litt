@@ -149,7 +149,7 @@ impl Search {
         }
 
         result.push_str(&snippet.fragment()[start_from..]);
-        result.replace('\n', "")
+        result.replace('\n', " ")
     }
 }
 
@@ -191,73 +191,42 @@ mod tests {
         run_test(|| {
             let search = create_searcher();
             test_normal_search(&search);
+            test_limit_and_offset(&search);
         })
     }
 
     fn test_normal_search(search: &Search) {
+        let test_cases: HashMap<&str, Vec<u32>> = HashMap::from([
+            ("flooding", vec![2]),
+            ("the", vec![1, 2]),
+            ("river flooding", vec![1, 2]),
+            ("river OR flooding", vec![1, 2]),
+            ("river AND flooding", vec![2]),
+            ("(river OR valley) AND flooding", vec![2]),
+            ("lley si'", vec![]),
+            ("CARRYING'", vec![2]),
+            ("\"limbs branches\"", vec![]),
+            ("\"limbs branches\"~1", vec![2]),
+            ("Bär", vec![1]),
+            ("Bär Hündin", vec![1]),
+        ]);
         // one-word search returning 1 result with 1 page
-        let results = search.search(&String::from("flooding"), 0, 10).unwrap();
-        println!("Got {} results.", results.len());
-        assert!(results.contains_key(TEST_DOC_NAME));
-        assert_eq!(1, results.get(TEST_DOC_NAME).unwrap().len());
-        let first_result = results.get(TEST_DOC_NAME).unwrap().front().unwrap();
-        assert_eq!(2, first_result.page);
+        for (search_term, pages) in &test_cases {
+            let results = search.search(search_term, 0, 10).unwrap();
+            if !pages.is_empty() {
+                assert!(results.contains_key(TEST_DOC_NAME));
+                let doc_results = results.get(TEST_DOC_NAME).unwrap();
+                assert_eq!(pages.len(), doc_results.len());
+                for page in pages {
+                    assert!(doc_results.iter().any(|result| result.page == *page));
+                }
+            } else {
+                assert!(!results.contains_key(TEST_DOC_NAME));
+            }
+        }
+    }
 
-        // one-word search returning 1 result with two pages
-        let results = search.search(&String::from("the"), 0, 10).unwrap();
-        assert!(results.contains_key(TEST_DOC_NAME));
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 2);
-
-        // two-word search returning 1 result with two pages
-        let results = search
-            .search(&String::from("river flooding"), 0, 10)
-            .unwrap();
-        assert!(results.contains_key(TEST_DOC_NAME));
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 2);
-
-        // two-word search returning 1 result with two pages
-        let id_results = search
-            .search(&String::from("river OR flooding"), 0, 10)
-            .unwrap();
-        assert_eq!(id_results, results);
-
-        // two-word search returning 1 result with two pages
-        let results = search
-            .search(&String::from("river AND flooding"), 0, 10)
-            .unwrap();
-        assert!(results.contains_key(TEST_DOC_NAME));
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
-
-        let results = search
-            .search(&String::from("(river OR valley) AND flooding"), 0, 10)
-            .unwrap();
-        assert!(results.contains_key(TEST_DOC_NAME));
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
-
-        // Cannot find part of words like 'lley si' for 'valley side'
-        let results = search.search(&String::from("lley si'"), 0, 10).unwrap();
-        assert!(!results.contains_key(TEST_DOC_NAME));
-
-        // Check caseinsensitive
-        let results = search.search(&String::from("CARRYING"), 0, 10).unwrap();
-        assert!(results.contains_key(TEST_DOC_NAME));
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
-        assert_eq!(results.get(TEST_DOC_NAME).unwrap().front().unwrap().page, 2);
-
-        // Phrase query should not be found (since only "limbs and branches" exists)
-        let results = search
-            .search(&String::from("\"limbs branches\""), 0, 10)
-            .unwrap();
-        assert!(!results.contains_key(TEST_DOC_NAME));
-
-        // Phrase query should be found with higher slop
-        let results = search
-            .search(&String::from("\"limbs branches\"~1"), 0, 10)
-            .unwrap();
-        assert!(results.contains_key(TEST_DOC_NAME));
-
+    fn test_limit_and_offset(search: &Search) {
         // river is contained twice
         let results = search.search(&String::from("river"), 0, 10).unwrap();
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 2);
