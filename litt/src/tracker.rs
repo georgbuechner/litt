@@ -70,8 +70,7 @@ impl IndexTracker {
         self.indices.contains_key(name)
     }
 
-    pub fn path_exists(&self, path_str: &str) -> Option<bool> {
-        let path = &PathBuf::from(path_str);
+    pub fn path_exists(&self, path: &PathBuf) -> Option<bool> {
         self.indices
             .iter()
             .find_map(|(_, val)| if val == path { Some(true) } else { None })
@@ -95,8 +94,7 @@ impl IndexTracker {
         }
     }
 
-    pub fn get_name(&self, path_str: &str) -> Option<String> {
-        let path = &PathBuf::from(path_str);
+    pub fn get_name(&self, path: &PathBuf) -> Option<String> {
         self.indices.iter().find_map(|(key, val)| {
             if val == path {
                 Some(key.to_string())
