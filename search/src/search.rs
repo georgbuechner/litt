@@ -213,7 +213,7 @@ mod tests {
         // one-word search returning 1 result with 1 page
         for (search_term, pages) in &test_cases {
             let results = search.search(search_term, 0, 10).unwrap();
-            if pages.len() > 0 {
+            if !pages.is_empty() {
                 assert!(results.contains_key(TEST_DOC_NAME));
                 let doc_results = results.get(TEST_DOC_NAME).unwrap();
                 assert_eq!(pages.len(), doc_results.len());
