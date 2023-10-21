@@ -134,22 +134,28 @@ fn main() -> Result<(), LittError> {
 
     // initialize new index
     if !cli.init.is_empty() {
-        println!("Creating new index \"{}\" at: {}: ", index_name, cli.init);
-        if index_tracker.exists(&index_name) || index_tracker.path_exists(&cli.init).is_some() {
+        let current_dir = env::current_dir().map_err(|e| LittError(e.to_string()))?;
+        let path = current_dir.join(cli.init);
+        println!(
+            "Creating new index \"{}\" at: {}: ",
+            index_name,
+            path.to_string_lossy()
+        );
+        if index_tracker.exists(&index_name) || index_tracker.path_exists(&path).is_some() {
             return Err(LittError(format!(
                 "Failed to create index since it already exists: name: {}, path: {}",
-                index_tracker.get_name(&cli.init).unwrap_or_default(),
-                cli.init
+                index_tracker.get_name(&path).unwrap_or_default(),
+                path.to_string_lossy()
             )));
         }
         // Add new index to index tracker (adding first, so that it can be removed in case of
         // failiure)
         let start = Instant::now();
-        if let Err(e) = index_tracker.add(index_name, cli.init.clone()) {
+        if let Err(e) = index_tracker.add(index_name, path.clone()) {
             return Err(LittError(e.to_string()));
         }
 
-        let mut index = match Index::create(&cli.init, SearchSchema::default()) {
+        let mut index = match Index::create(&path, SearchSchema::default()) {
             Ok(index) => index,
             Err(e) => return Err(LittError(e.to_string())),
         };
