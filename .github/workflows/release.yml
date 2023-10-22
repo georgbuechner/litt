@@ -21,15 +21,17 @@ jobs:
       - name: Get version from Cargo.toml
         id: cargo_version
         run: |
-          CARGO_VERSION=$(grep "version" Cargo.toml | head -1 | awk '{print $3}' | tr -d '"')
+          CARGO_VERSION=$(cargo tree --depth 0 | awk 'NR==1 {print $2}')
           echo "::set-output name=version::$CARGO_VERSION"
+      - name: Print version
+        run: echo "Using version ${{ steps.get_version.outputs.version }}"
 
       - name: Compare versions and set result
         id: compare
         run: |
           LATEST_VERSION=${{ steps.latest_version.outputs.version }}
           CARGO_VERSION=${{ steps.cargo_version.outputs.version }}
-          if [[ "$CARGO_VERSION" > "$LATEST_VERSION" ]]; then
+          if [[ "$CARGO_VERSION" != "$LATEST_VERSION" ]]; then
             echo "::set-output name=should_run::true"
           else
             echo "::set-output name=should_run::false"
