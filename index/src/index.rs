@@ -1,5 +1,5 @@
 use crate::LittIndexError::{
-    CreationError, OpenError, PdfParseError, TxtParseError, ReloadError, UpdateError, WriteError,
+    CreationError, OpenError, PdfParseError, ReloadError, TxtParseError, UpdateError, WriteError,
 };
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
@@ -7,7 +7,7 @@ use litt_shared::LITT_DIRECTORY_NAME;
 use std::collections::HashMap;
 use std::convert::AsRef;
 use std::fs::{create_dir_all, File};
-use std::io::{Read, self};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
@@ -91,7 +91,11 @@ impl Index {
         self.reader.reload().map_err(|e| ReloadError(e.to_string()))
     }
 
-    pub fn process_file(&mut self, checksum_map: &mut HashMap<String, (u64, SystemTime)>, path: DirEntry) -> Result<()> {
+    pub fn process_file(
+        &mut self,
+        checksum_map: &mut HashMap<String, (u64, SystemTime)>,
+        path: DirEntry,
+    ) -> Result<()> {
         let relative_path = path
             .path()
             .strip_prefix(&self.documents_path)
@@ -99,7 +103,7 @@ impl Index {
 
         let str_path = &path.path().to_string_lossy().to_string();
         if !self
-            .compare_checksum(str_path, &checksum_map)
+            .compare_checksum(str_path, checksum_map)
             .unwrap_or(false)
         {
             println!("Adding document: {}", relative_path.to_string_lossy());
@@ -162,11 +166,11 @@ impl Index {
             .follow_links(true)
             .into_iter()
             .filter_map(|entry_result| entry_result.ok())
-            .filter(|entry| 
-                entry.file_name().to_string_lossy().ends_with("pdf") || 
-                entry.file_name().to_string_lossy().ends_with("md") ||
-                entry.file_name().to_string_lossy().ends_with("txt")
-            )
+            .filter(|entry| {
+                entry.file_name().to_string_lossy().ends_with("pdf")
+                    || entry.file_name().to_string_lossy().ends_with("md")
+                    || entry.file_name().to_string_lossy().ends_with("txt")
+            })
             .collect::<Vec<_>>()
     }
 
@@ -198,7 +202,12 @@ impl Index {
         Ok(())
     }
 
-    fn add_pdf_document(&self, dir_entry: &DirEntry, pages_path: PathBuf, full_path: &Path) -> Result<u64> {
+    fn add_pdf_document(
+        &self,
+        dir_entry: &DirEntry,
+        pages_path: PathBuf,
+        full_path: &Path,
+    ) -> Result<u64> {
         // loop over pages
         let mut pdf_to_text_successful = true;
         let mut page_number = 0;
@@ -234,20 +243,26 @@ impl Index {
         Ok(page_number)
     }
 
-    fn add_txt_document(&self, dir_entry: &DirEntry, pages_path: PathBuf, full_path: &Path) -> Result<u64> {
+    fn add_txt_document(
+        &self,
+        dir_entry: &DirEntry,
+        pages_path: PathBuf,
+        full_path: &Path,
+    ) -> Result<u64> {
         let page_number = 1;
         let mut page_path = pages_path.join(page_number.to_string());
         page_path.set_extension("txt");
         // Open the file in read-only mode
         let mut file = File::open(full_path).map_err(|e| TxtParseError(e.to_string()))?;
         // Store as page seperatly
-        let mut destination_file = File::create(page_path.clone()).map_err(|e| TxtParseError(e.to_string()))?;
-        io::copy(&mut file, &mut destination_file) .map_err(|e| TxtParseError(e.to_string()))?;
+        let mut destination_file =
+            File::create(page_path.clone()).map_err(|e| TxtParseError(e.to_string()))?;
+        io::copy(&mut file, &mut destination_file).map_err(|e| TxtParseError(e.to_string()))?;
         // Read the contents of the file into a string
         let mut file = File::open(full_path).map_err(|e| TxtParseError(e.to_string()))?;
         let mut body = String::new();
         file.read_to_string(&mut body)
-            .map_err(|e| TxtParseError(e.to_string() + &full_path.to_string_lossy().to_string()))?;
+            .map_err(|e| TxtParseError(e.to_string() + full_path.to_string_lossy().as_ref()))?;
         // Finally, add page
         self.add_page(dir_entry.path(), page_number, &page_path, &body)?;
         Ok(page_number)

@@ -47,11 +47,11 @@ fn get_first_term(query: &str) -> String {
 
 fn open_pdf(path: String, page: u32, term: String) -> Result<(), LittError> {
     let mut cmd = std::process::Command::new("zathura");
-        cmd.arg(&path)
-            .arg("-P")
-            .arg(&page.to_string())
-            .arg("-f")
-            .arg(&term);
+    cmd.arg(&path)
+        .arg("-P")
+        .arg(&page.to_string())
+        .arg("-f")
+        .arg(&term);
 
     let zathura_was_successful = match cmd.status() {
         Ok(status) => match status.code() {
@@ -63,7 +63,8 @@ fn open_pdf(path: String, page: u32, term: String) -> Result<(), LittError> {
     if !zathura_was_successful {
         println!(
             "Consider installing zathura so we can open the PDF on the correct page for you.\n\
-Using standard system PDF viewer... {}", path.to_string()
+Using standard system PDF viewer... {}",
+            path
         );
         open_std_programm(path)?;
     }
@@ -112,7 +113,6 @@ fn main() -> Result<(), LittError> {
             let path = fast_results
                 .get(last_result)
                 .expect("Number not in last results");
-            println!("Got path: {}", path.0.to_string());
             if path.0.ends_with("pdf") {
                 open_pdf(path.0.clone(), path.1, path.2.clone())?;
             } else {
