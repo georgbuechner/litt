@@ -24,7 +24,7 @@ jobs:
           CARGO_VERSION=$(cargo tree --depth 0 | awk 'NR==1 {print $2}')
           echo "::set-output name=version::$CARGO_VERSION"
       - name: Print version
-        run: echo "Using version ${{ steps.get_version.outputs.version }}"
+        run: echo "Using version ${{ steps.cargo_version.outputs.version }}"
 
       - name: Compare versions and set result
         id: compare
