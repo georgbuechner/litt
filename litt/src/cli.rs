@@ -39,15 +39,14 @@ pub struct Cli {
     /// the max number of search results f.e. 0-10 (limit=10)
     #[arg(long, default_value_t = 10)]
     pub limit: usize,
-    
-    /// use fuzzy matching. F.e. "hund"="hunde" and "bare"="bori" 
+
+    /// use fuzzy matching. F.e. "hund"="hunde" and "bare"="bori"
     #[arg(short, long, default_value_t = false)]
     pub fuzzy: bool,
-   
+
     /// the max distance between two terms when using --fuzzy. F.e. "bare"="bori" (distance=2)
     #[arg(long, long, default_value_t = 2)]
     pub distance: u8,
-    
 }
 
 #[test]

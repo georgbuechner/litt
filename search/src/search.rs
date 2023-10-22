@@ -59,17 +59,15 @@ impl Search {
                 query_parser.set_field_fuzzy(self.schema.body, true, *distance, true);
                 (query_parser, term)
             }
-            SearchTerm::Exact(term) => {
-                (self.index.query_parser(), term)
-            }
+            SearchTerm::Exact(term) => (self.index.query_parser(), term),
         };
 
         let query = query_parser
             .parse_query(term)
             .map_err(|e| SearchError(e.to_string()))?;
         let top_docs = searcher
-                    .search(&query, &TopDocs::with_limit(limit).and_offset(offset))
-                    .map_err(|e| SearchError(e.to_string()))?;
+            .search(&query, &TopDocs::with_limit(limit).and_offset(offset))
+            .map_err(|e| SearchError(e.to_string()))?;
 
         // Assemble results
         let mut results: HashMap<String, LinkedList<SearchResult>> = HashMap::new();
@@ -114,16 +112,16 @@ impl Search {
         Ok(results)
     }
 
-    pub fn get_preview(&self, search_result: &SearchResult, search_term: &SearchTerm) -> Result<String> {
+    pub fn get_preview(
+        &self,
+        search_result: &SearchResult,
+        search_term: &SearchTerm,
+    ) -> Result<String> {
         // Prepare creating snippet.
         let searcher = self.index.searcher();
         let (query_parser, term) = match search_term {
-            SearchTerm::Fuzzy(_, _) => {
-                return Ok("[fuzzy match] No preview. We're sry.".into())
-            }
-            SearchTerm::Exact(term) => {
-                (self.index.query_parser(), term)
-            }
+            SearchTerm::Fuzzy(_, _) => return Ok("[fuzzy match] No preview. We're sry.".into()),
+            SearchTerm::Exact(term) => (self.index.query_parser(), term),
         };
         let query = query_parser
             .parse_query(term)
@@ -235,7 +233,9 @@ mod tests {
         // one-word search returning 1 result with 1 page
         for (search_term, pages) in &test_cases {
             println!("- [exact] searching {}.", search_term);
-            let results = search.search(&SearchTerm::Exact(search_term.to_string()), 0, 10).unwrap();
+            let results = search
+                .search(&SearchTerm::Exact(search_term.to_string()), 0, 10)
+                .unwrap();
             if !pages.is_empty() {
                 assert!(results.contains_key(TEST_DOC_NAME));
                 let doc_results = results.get(TEST_DOC_NAME).unwrap();
@@ -260,12 +260,14 @@ mod tests {
             // ("branch Sole", vec![1]), // Does not work. finds branches @ page 1
             ("Soledad", vec![1]),
             ("Soledud Salinos", vec![1]), // actual fuzzy
-            // ("Sole AND Sali", vec![1]), // Does not work: searching for ['sole' 'and', 'sali']
+                                          // ("Sole AND Sali", vec![1]), // Does not work: searching for ['sole' 'and', 'sali']
         ]);
         // one-word search returning 1 result with 1 page
         for (search_term, pages) in &test_cases {
             println!("- [fuzzy] searching {}.", search_term);
-            let results = search.search(&SearchTerm::Fuzzy(search_term.to_string(), 2), 0, 10).unwrap();
+            let results = search
+                .search(&SearchTerm::Fuzzy(search_term.to_string(), 2), 0, 10)
+                .unwrap();
             if !pages.is_empty() {
                 assert!(results.contains_key(TEST_DOC_NAME));
                 let doc_results = results.get(TEST_DOC_NAME).unwrap();
@@ -279,19 +281,26 @@ mod tests {
         }
     }
 
-
     fn test_limit_and_offset(search: &Search) {
         // river is contained twice
-        let results = search.search(&SearchTerm::Exact(String::from("river")), 0, 10).unwrap();
+        let results = search
+            .search(&SearchTerm::Exact(String::from("river")), 0, 10)
+            .unwrap();
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 2);
         // By changing limit only one results left:
-        let results = search.search(&SearchTerm::Exact(String::from("river")), 0, 1).unwrap();
+        let results = search
+            .search(&SearchTerm::Exact(String::from("river")), 0, 1)
+            .unwrap();
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
         // Same result when changing offset:
-        let results = search.search(&SearchTerm::Exact(String::from("river")), 1, 10).unwrap();
+        let results = search
+            .search(&SearchTerm::Exact(String::from("river")), 1, 10)
+            .unwrap();
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 1);
         // First match has higher score than second:
-        let results = search.search(&SearchTerm::Exact(String::from("river")), 0, 10).unwrap();
+        let results = search
+            .search(&SearchTerm::Exact(String::from("river")), 0, 10)
+            .unwrap();
         assert_eq!(results.get(TEST_DOC_NAME).unwrap().len(), 2);
         assert!(
             results.get(TEST_DOC_NAME).unwrap().front().unwrap().score

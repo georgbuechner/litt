@@ -239,10 +239,10 @@ fn main() -> Result<(), LittError> {
         );
         let start = Instant::now();
         let search = Search::new(index, SearchSchema::default());
-        let search_term = if !cli.fuzzy  {
-            litt_search::search::SearchTerm::Exact(cli.term.clone()) 
+        let search_term = if !cli.fuzzy {
+            litt_search::search::SearchTerm::Exact(cli.term.clone())
         } else {
-            litt_search::search::SearchTerm::Fuzzy(cli.term.clone(), cli.distance) 
+            litt_search::search::SearchTerm::Fuzzy(cli.term.clone(), cli.distance)
         };
         let results = match search.search(&search_term, cli.offset, cli.limit) {
             Ok(results) => results,
