@@ -1,7 +1,7 @@
 use crate::LittIndexError::{
     CreationError, OpenError, PdfParseError, ReloadError, TxtParseError, UpdateError, WriteError,
 };
-use crate::Result;
+use crate::{LittIndexError, Result};
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use std::fs::{create_dir_all, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use rayon::prelude::*;
 use tantivy::query::QueryParser;
@@ -26,12 +26,9 @@ const CHECK_SUM_MAP_FILENAME: &str = "checksum.json";
 /// The total target memory usage that will be split between a given number of threads
 const TARGET_MEMORY_BYTES: usize = 100_000_000;
 
-pub struct Index {
-    documents_path: PathBuf,
-    index: TantivyIndex,
-    reader: IndexReader,
-    writer: IndexWriter,
-    schema: SearchSchema,
+pub enum Index {
+    Writing{index: Arc<Mutex<TantivyIndex>>, schema: SearchSchema, documents_path: PathBuf, writer: IndexWriter},
+    Reading{index: TantivyIndex, schema: SearchSchema, reader: IndexReader}
 }
 
 impl Index {
@@ -44,56 +41,71 @@ impl Index {
         let index = Self::create_index(&index_path, schema.schema.clone())?;
         let reader = Self::build_reader(&index)?;
         let writer = Self::build_writer(&index)?;
-        Ok(Self {
+        Ok(Self::Writing {
             documents_path,
-            index,
-            reader,
+            index: Arc::new(Mutex::new(index)),
             writer,
             schema,
         })
     }
 
     pub fn open_or_create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
+        // TODO make search schema parameter optional and load schema from existing index
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
             .join(INDEX_DIRECTORY_NAME);
         create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
-        let index = Self::create_index(&index_path, schema.schema.clone())
-            .unwrap_or(Self::open_index(&index_path)?);
-        let reader = Self::build_reader(&index)?;
-        let writer = Self::build_writer(&index)?;
-        // TODO make search schema parameter optional and load schema from existing index
-        Ok(Self {
-            documents_path,
-            index,
-            reader,
-            writer,
-            schema,
-        })
+        let index_create_result = Self::create_index(&index_path, schema.schema.clone());
+        match index_create_result {
+            Ok(index) => {
+                let writer = Self::build_writer(&index)?;
+                Ok(Self::Writing {documents_path, index: Arc::new(Mutex::new(index)), writer, schema})
+            }
+            Err(_) => {
+                let index = Self::open_index(&index_path)?;
+                let reader = Self::build_reader(&index)?;
+                Ok(Self::Reading {index, schema, reader})
+            }
+        }
     }
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
-    pub fn add_all_documents(&mut self) -> Result<()> {
-        let mut checksum_map = self.open_or_create_checksum_map()?;
+    pub fn add_all_documents(mut self) -> Result<()> {
+        let checksum_map = Arc::new(self.open_or_create_checksum_map()?);
         let results: Result<Vec<_>> = self
             .collect_document_files()
-            .par_iter().try_for_each( |path| {
-                self.process_file(&mut &checksum_map, path.clone())
-            })?;
+            .par_iter()
+            .map(|path| {
+                let mut checksum_map = Arc::clone(&checksum_map);
+                Self::process_file(&mut self, &mut checksum_map, path.clone())
+            })
+            .collect();
+
+// Once done, you can retrieve the map back from the Arc<Mutex<T>>
+        let checksum_map = Arc::try_unwrap(checksum_map).unwrap().into_inner().unwrap();
         self.store_checksum_map(&checksum_map)?;
-            results?;
+        results?;
 
         // We need to call .commit() explicitly to force the
         // index_writer to finish processing the documents in the queue,
         // flush the current index to the disk, and advertise
         // the existence of new documents.
+        if let Index::Writing {index: index_mutex, schema, documents_path: _, mut writer } = self {
+            writer
+                .commit()
+                .map_err(|e| WriteError(e.to_string()))?;
+            let index = Arc::try_unwrap(index_mutex).unwrap().into_inner().unwrap();
+            let reader = Self::build_reader(&index)?;
+            reader.reload().map_err(|e| ReloadError(e.to_string()))?;
+            self = Index::Reading {
+                index,
+                schema,
+                reader,
+            };
+            Ok(())
+        } else{ Err(WriteError("Wrong index state – must be \"Writing\"!".to_string()))}
 
-        self.writer
-            .commit()
-            .map_err(|e| WriteError(e.to_string()))?;
-
-        self.reader.reload().map_err(|e| ReloadError(e.to_string()))
     }
 
     pub fn process_file(
@@ -101,9 +113,11 @@ impl Index {
         checksum_map: &mut Mutex<HashMap<String, (u64, SystemTime)>>,
         path: DirEntry,
     ) -> Result<()> {
+        if let Index::Writing {index: _, schema: _, documents_path, writer: _} = self {
+
         let relative_path = path
             .path()
-            .strip_prefix(&self.documents_path)
+            .strip_prefix(&documents_path)
             .map_err(|e| CreationError(e.to_string()))?;
 
         let str_path = &path.path().to_string_lossy().to_string();
@@ -121,6 +135,9 @@ impl Index {
             );
         }
         Ok(())
+        } else {
+            Err(CreationError("Wrong index state!".to_string()))
+        }
     }
 
     /// For now, just delete existing index and index the documents again.
@@ -311,7 +328,7 @@ impl Index {
         }
     }
 
-    fn store_checksum_map(&self, checksum_map: &Mutex<HashMap<String, (u64, SystemTime)>>) -> Result<()> {
+    fn store_checksum_map(&self, checksum_map: &HashMap<String, (u64, SystemTime)>) -> Result<()> {
         let path = self
             .documents_path
             .join(LITT_DIRECTORY_NAME)
