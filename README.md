@@ -84,6 +84,8 @@ You may also search for multiple words:
 litt books 'Tulp Narz' --fuzzy
 ```
 
-However, working with frases (`litt books '"Tulpen Narzisse"~1'`) or `AND`/`OR`
+*Note*
+- working with phrases (`litt books '"Tulpen Narzisse"~1'`) or `AND`/`OR`
 does not work. 
-Also currently no preview can be shown when using fuzzy search.
+- no preview can be shown when using fuzzy search.
+- fuzzy matching only works on the body
