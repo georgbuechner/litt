@@ -38,7 +38,7 @@ jobs:
           fi
   build:
     needs: check_version
-    if: needs.check_version.outputs.should_run == 'true'
+    if: needs.compare.outputs.should_run == 'true'
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -76,7 +76,6 @@ jobs:
 
   release:
     needs: build
-    if: needs.check_version.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
