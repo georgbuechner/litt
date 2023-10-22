@@ -199,7 +199,7 @@ mod tests {
     fn create_searcher() -> Search {
         let search_schema = SearchSchema::default();
         let mut index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
-        index.add_all_pdf_documents().unwrap();
+        index.add_all_documents().unwrap();
         println!("loaded {} document pages.", &index.searcher().num_docs());
         Search::new(index, search_schema)
     }

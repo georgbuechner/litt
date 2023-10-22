@@ -160,7 +160,7 @@ fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError(e.to_string())),
         };
 
-        if let Err(e) = index.add_all_pdf_documents() {
+        if let Err(e) = index.add_all_documents() {
             return Err(LittError(e.to_string()));
         }
         println!(
@@ -201,7 +201,7 @@ fn main() -> Result<(), LittError> {
         println!("Updating index \"{}\".", index_name);
         let old_num_docs = index.searcher().num_docs();
         let start = Instant::now();
-        if let Err(e) = index.add_all_pdf_documents() {
+        if let Err(e) = index.add_all_documents() {
             return Err(LittError(e.to_string()));
         }
         println!(

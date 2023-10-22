@@ -71,28 +71,10 @@ impl Index {
     }
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
-    pub fn add_all_pdf_documents(&mut self) -> Result<()> {
+    pub fn add_all_documents(&mut self) -> Result<()> {
         let mut checksum_map = self.open_or_create_checksum_map()?;
-        for path in self.get_pdf_dir_entries() {
-            let relative_path = path
-                .path()
-                .strip_prefix(&self.documents_path)
-                .map_err(|e| CreationError(e.to_string()))?;
-
-            let str_path = &path.path().to_string_lossy().to_string();
-            if !self
-                .compare_checksum(str_path, &checksum_map)
-                .unwrap_or(false)
-            {
-                println!("Adding document: {}", relative_path.to_string_lossy());
-                self.add_pdf_document_pages(&path)?;
-                self.update_checksum(str_path, &mut checksum_map)?;
-            } else {
-                println!(
-                    "Skipped (already exists): {}",
-                    relative_path.to_string_lossy()
-                );
-            }
+        for path in self.collect_document_files() {
+            self.process_file(&mut checksum_map, path)?
         }
         self.store_checksum_map(&checksum_map)?;
 
@@ -108,6 +90,29 @@ impl Index {
         self.reader.reload().map_err(|e| ReloadError(e.to_string()))
     }
 
+    pub fn process_file(&mut self, checksum_map: &mut HashMap<String, (u64, SystemTime)>, path: DirEntry) -> Result<()> {
+        let relative_path = path
+            .path()
+            .strip_prefix(&self.documents_path)
+            .map_err(|e| CreationError(e.to_string()))?;
+
+        let str_path = &path.path().to_string_lossy().to_string();
+        if !self
+            .compare_checksum(str_path, &checksum_map)
+            .unwrap_or(false)
+        {
+            println!("Adding document: {}", relative_path.to_string_lossy());
+            self.add_pdf_document_pages(&path)?;
+            self.update_checksum(str_path, checksum_map)?;
+        } else {
+            println!(
+                "Skipped (already exists): {}",
+                relative_path.to_string_lossy()
+            );
+        }
+        Ok(())
+    }
+
     /// For now, just delete existing index and index the documents again.
     pub fn reload(&mut self) -> Result<()> {
         self.writer
@@ -117,7 +122,7 @@ impl Index {
             .join(LITT_DIRECTORY_NAME)
             .join(CHECK_SUM_MAP_FILENAME);
         _ = std::fs::remove_file(checksum_map);
-        self.add_all_pdf_documents()
+        self.add_all_documents()
     }
 
     pub fn searcher(&self) -> Searcher {
@@ -150,13 +155,17 @@ impl Index {
             .map_err(|e| CreationError(e.to_string()))
     }
 
-    fn get_pdf_dir_entries(&self) -> Vec<DirEntry> {
+    fn collect_document_files(&self) -> Vec<DirEntry> {
         let walk_dir = WalkDir::new(&self.documents_path);
         walk_dir
             .follow_links(true)
             .into_iter()
             .filter_map(|entry_result| entry_result.ok())
-            .filter(|entry| entry.file_name().to_string_lossy().ends_with("pdf"))
+            .filter(|entry| 
+                entry.file_name().to_string_lossy().ends_with("pdf") || 
+                entry.file_name().to_string_lossy().ends_with("md") ||
+                entry.file_name().to_string_lossy().ends_with("txt")
+            )
             .collect::<Vec<_>>()
     }
 
