@@ -174,17 +174,19 @@ fn main() -> Result<(), LittError> {
             return Err(LittError(e.to_string()));
         }
 
-        let mut index = match Index::create(&path, SearchSchema::default()) {
+        let index = match Index::create(&path, SearchSchema::default()) {
             Ok(index) => index,
             Err(e) => return Err(LittError(e.to_string())),
         };
+        let searcher = index.searcher().map_err(|e| LittError(e.to_string()))?;
 
         if let Err(e) = index.add_all_documents() {
             return Err(LittError(e.to_string()));
         }
         println!(
             "Successfully indexed {} document pages in {:?}",
-            index.searcher().num_docs(),
+            searcher
+                .num_docs(),
             start.elapsed()
         );
         return Ok(());
@@ -210,46 +212,49 @@ fn main() -> Result<(), LittError> {
     let index_path = index_tracker
         .get_path(&index_name)
         .map_err(|e| LittError(e.to_string()))?;
-    let mut index = match Index::open_or_create(index_path.clone(), SearchSchema::default()) {
+    let index = match Index::open_or_create(index_path.clone(), SearchSchema::default()) {
         Ok(index) => index,
         Err(e) => return Err(LittError(e.to_string())),
     };
+    let searcher = index.searcher().map_err(|e| LittError(e.to_string()))?;
 
     // update existing index
     if cli.update {
         println!("Updating index \"{}\".", index_name);
-        let old_num_docs = index.searcher().num_docs();
+        let old_num_docs = searcher.num_docs();
         let start = Instant::now();
         if let Err(e) = index.add_all_documents() {
             return Err(LittError(e.to_string()));
         }
         println!(
             "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
-            index.searcher().num_docs()-old_num_docs,
+            searcher
+                .num_docs()-old_num_docs,
             start.elapsed(),
-            index.searcher().num_docs(),
+            searcher
+                .num_docs(),
         );
         return Ok(());
     }
     // reload existing index
     if cli.reload {
         println!("Reloading index \"{}\".", index_name);
-        let old_num_docs = index.searcher().num_docs();
+        let old_num_docs = searcher.num_docs();
         let start = Instant::now();
         if let Err(e) = index.reload() {
             return Err(LittError(e.to_string()));
         }
         println!(
             "Reload done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
-            index.searcher().num_docs()-old_num_docs,
+            searcher.num_docs()-old_num_docs,
             start.elapsed(),
-            index.searcher().num_docs(),
+            searcher.num_docs(),
         );
         return Ok(());
     }
     // do normal search
     else if !cli.term.is_empty() {
-        let num_docs = &index.searcher().num_docs();
+        let num_docs = searcher.num_docs();
         println!(
             "Search index \"{}\" ({}) for {}",
             index_name,

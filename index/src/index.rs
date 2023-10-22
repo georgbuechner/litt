@@ -68,7 +68,7 @@ impl Index {
     }
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
-    pub fn add_all_documents(mut self) -> Result<()> {
+    pub fn add_all_documents(mut self) -> Result<Self> {
         let checksum_map = Arc::new(self.open_or_create_checksum_map()?);
         let results: Result<Vec<_>> = self
             .collect_document_files()
@@ -101,7 +101,7 @@ impl Index {
                 reader,
                 documents_path
             };
-            Ok(())
+            Ok(self)
         } else{ Err(WriteError("Wrong index state – must be \"Writing\"!".to_string()))}
 
     }
@@ -139,7 +139,7 @@ impl Index {
     }
 
     /// For now, just delete existing index and index the documents again.
-    pub fn reload(self) -> Result<()> {
+    pub fn reload(self) -> Result<Self> {
         if let Index::Reading {ref index, ref documents_path, ..} = self {
             let writer = Self::build_writer(&index)?;
             writer
