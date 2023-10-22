@@ -1,6 +1,5 @@
 use tantivy::schema::Field;
-use tantivy::schema::Schema;
-use tantivy::schema::{STORED, TEXT};
+use tantivy::schema::*;
 
 #[derive(Clone)]
 pub struct SearchSchema {

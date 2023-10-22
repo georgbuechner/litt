@@ -239,7 +239,12 @@ fn main() -> Result<(), LittError> {
         );
         let start = Instant::now();
         let search = Search::new(index, SearchSchema::default());
-        let results = match search.search(&cli.term, cli.offset, cli.limit) {
+        let search_term = if !cli.fuzzy {
+            litt_search::search::SearchTerm::Exact(cli.term.clone())
+        } else {
+            litt_search::search::SearchTerm::Fuzzy(cli.term.clone(), cli.distance)
+        };
+        let results = match search.search(&search_term, cli.offset, cli.limit) {
             Ok(results) => results,
             Err(e) => return Err(LittError(e.to_string())),
         };
@@ -266,7 +271,7 @@ fn main() -> Result<(), LittError> {
                         first_query_term.clone(),
                     ),
                 );
-                let preview = match search.get_preview(page, &cli.term) {
+                let preview = match search.get_preview(page, &search_term) {
                     Ok(preview) => preview,
                     Err(e) => return Err(LittError(e.to_string())),
                 };

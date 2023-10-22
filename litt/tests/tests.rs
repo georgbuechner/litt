@@ -23,7 +23,8 @@ fn test_index_and_search() {
         let search = Search::new(index, search_schema);
 
         // do seach: expect 1 results
-        let searched_word = String::from("Hello");
+        let input = String::from("Hello");
+        let searched_word = litt_search::search::SearchTerm::Exact(input.clone());
         let results = search.search(&searched_word, 0, 10).unwrap();
 
         for (title, pages) in &results {
@@ -34,7 +35,7 @@ fn test_index_and_search() {
                 assert!(
                     preview
                         .to_lowercase()
-                        .find(&searched_word.to_lowercase())
+                        .find(&input.to_lowercase())
                         .unwrap_or_default()
                         > 0
                 );
