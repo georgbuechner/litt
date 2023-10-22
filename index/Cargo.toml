@@ -11,6 +11,8 @@ uuid = { workspace = true }
 serde_json = { workspace = true }
 walkdir = "2.3.3"
 litt_shared = { path = "../shared" }
+rayon = "1.8.0"
+
 tokio = { workspace = true }
 [dev-dependencies]
 once_cell = "1.17.1"
