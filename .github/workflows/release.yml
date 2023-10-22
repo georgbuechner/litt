@@ -80,7 +80,7 @@ jobs:
           path: ./target/${{ matrix.target }}/release/litt${{ matrix.os == 'windows-latest' && '.exe' || '' }}
 
   release:
-    needs: build
+    needs: [build, check_version]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
