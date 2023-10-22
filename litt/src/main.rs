@@ -71,22 +71,25 @@ Using standard system PDF viewer... {}", path.to_string()
 }
 
 fn open_std_programm(path: String) -> Result<(), LittError> {
-    println!("Using `that_in_background`: {}", path);
-    open::that_in_background(&path);
-    println!("Done");
-    // #[cfg(unix)]
-    // std::process::Command::new("open")
-    //     .arg(&path)
-    //     .spawn()
-    //     .map_err(|e| LittError(e.to_string()))?;
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| LittError(e.to_string()))?;
 
-    // #[cfg(windows)]
-    // std::process::Command::new("cmd")
-    //     .arg("/c")
-    //     .arg("start")
-    //     .arg(&path.0)
-    //     .spawn()
-    //     .map_err(|e| LittError(e.to_string()))?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| LittError(e.to_string()))?;
+
+    #[cfg(windows)]
+    std::process::Command::new("cmd")
+        .arg("/c")
+        .arg("start")
+        .arg(&path.0)
+        .spawn()
+        .map_err(|e| LittError(e.to_string()))?;
 
     Ok(())
 }
