@@ -1,3 +1,6 @@
+# Litt
+Literature tool for searching all PDFs in a directory.
+
 ### tl;dr
 **Installing**:
 ```
@@ -19,8 +22,7 @@ litt <index-name> <search-term>
 1. [litt](#litt)
 2. [installation](#installation)
 	1. [requirements](#requirements)
-	2. [installation](#install)
-		- [pre-built binaries](#prebuilt-binaries)
+	2. [pre-built binaries](#prebuilt-binaries)
 1. [usage](#usage)
     1. [create new Index](#create)
     2. [updating, reloading, deleting](#updating)
@@ -30,10 +32,10 @@ litt <index-name> <search-term>
 3. [Acknowledgements](#acknowledgements)
 
 
-# litt
+# Litt
 Literature tool for searching all PDFs in a directory.
 
-## Installation <a name="install"></a>
+## Installation 
 
 ### Requirements
 The command-line tool [pdftotext](https://www.xpdfreader.com/download.html) should be available on your system.
