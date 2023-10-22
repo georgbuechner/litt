@@ -1,6 +1,6 @@
 [package]
 name = "litt"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 
 [dependencies]
@@ -13,3 +13,4 @@ colored = { workspace = true }
 litt_search = { path = "../search" }
 litt_shared = { path = "../shared" }
 litt_index = { path = "../index" }
+open = { workspace = true }

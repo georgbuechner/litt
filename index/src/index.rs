@@ -1,12 +1,13 @@
 use crate::LittIndexError::{
-    CreationError, OpenError, PdfParseError, ReloadError, UpdateError, WriteError,
+    CreationError, OpenError, PdfParseError, ReloadError, TxtParseError, UpdateError, WriteError,
 };
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
 use std::collections::HashMap;
 use std::convert::AsRef;
-use std::fs::create_dir_all;
+use std::fs::{create_dir_all, File};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
@@ -71,28 +72,10 @@ impl Index {
     }
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
-    pub fn add_all_pdf_documents(&mut self) -> Result<()> {
+    pub fn add_all_documents(&mut self) -> Result<()> {
         let mut checksum_map = self.open_or_create_checksum_map()?;
-        for path in self.get_pdf_dir_entries() {
-            let relative_path = path
-                .path()
-                .strip_prefix(&self.documents_path)
-                .map_err(|e| CreationError(e.to_string()))?;
-
-            let str_path = &path.path().to_string_lossy().to_string();
-            if !self
-                .compare_checksum(str_path, &checksum_map)
-                .unwrap_or(false)
-            {
-                println!("Adding document: {}", relative_path.to_string_lossy());
-                self.add_pdf_document_pages(&path)?;
-                self.update_checksum(str_path, &mut checksum_map)?;
-            } else {
-                println!(
-                    "Skipped (already exists): {}",
-                    relative_path.to_string_lossy()
-                );
-            }
+        for path in self.collect_document_files() {
+            self.process_file(&mut checksum_map, path)?
         }
         self.store_checksum_map(&checksum_map)?;
 
@@ -108,6 +91,33 @@ impl Index {
         self.reader.reload().map_err(|e| ReloadError(e.to_string()))
     }
 
+    pub fn process_file(
+        &mut self,
+        checksum_map: &mut HashMap<String, (u64, SystemTime)>,
+        path: DirEntry,
+    ) -> Result<()> {
+        let relative_path = path
+            .path()
+            .strip_prefix(&self.documents_path)
+            .map_err(|e| CreationError(e.to_string()))?;
+
+        let str_path = &path.path().to_string_lossy().to_string();
+        if !self
+            .compare_checksum(str_path, checksum_map)
+            .unwrap_or(false)
+        {
+            println!("Adding document: {}", relative_path.to_string_lossy());
+            self.add_document(&path)?;
+            self.update_checksum(str_path, checksum_map)?;
+        } else {
+            println!(
+                "Skipped (already exists): {}",
+                relative_path.to_string_lossy()
+            );
+        }
+        Ok(())
+    }
+
     /// For now, just delete existing index and index the documents again.
     pub fn reload(&mut self) -> Result<()> {
         self.writer
@@ -117,7 +127,7 @@ impl Index {
             .join(LITT_DIRECTORY_NAME)
             .join(CHECK_SUM_MAP_FILENAME);
         _ = std::fs::remove_file(checksum_map);
-        self.add_all_pdf_documents()
+        self.add_all_documents()
     }
 
     pub fn searcher(&self) -> Searcher {
@@ -150,18 +160,22 @@ impl Index {
             .map_err(|e| CreationError(e.to_string()))
     }
 
-    fn get_pdf_dir_entries(&self) -> Vec<DirEntry> {
+    fn collect_document_files(&self) -> Vec<DirEntry> {
         let walk_dir = WalkDir::new(&self.documents_path);
         walk_dir
             .follow_links(true)
             .into_iter()
             .filter_map(|entry_result| entry_result.ok())
-            .filter(|entry| entry.file_name().to_string_lossy().ends_with("pdf"))
+            .filter(|entry| {
+                entry.file_name().to_string_lossy().ends_with("pdf")
+                    || entry.file_name().to_string_lossy().ends_with("md")
+                    || entry.file_name().to_string_lossy().ends_with("txt")
+            })
             .collect::<Vec<_>>()
     }
 
-    /// Add a tantivy document to the index for each page of the pdf document.
-    fn add_pdf_document_pages(&self, dir_entry: &DirEntry) -> Result<()> {
+    /// Add a tantivy document to the index for each page of the document.
+    fn add_document(&self, dir_entry: &DirEntry) -> Result<()> {
         // Create custom directory to store all pages:
         let doc_id = Uuid::new_v4();
         let pages_path = self
@@ -170,8 +184,30 @@ impl Index {
             .join(PAGES_DIRECTORY_NAME)
             .join(doc_id.to_string());
         create_dir_all(&pages_path).map_err(|e| CreationError(e.to_string()))?;
-        let full_path_to_pdf = dir_entry.path();
+        let full_path = dir_entry.path();
 
+        // Check filetype (pdf/ txt)
+        let num = if full_path.to_string_lossy().ends_with("pdf") {
+            self.add_pdf_document(dir_entry, pages_path, full_path)?
+        } else {
+            self.add_txt_document(dir_entry, pages_path, full_path)?
+        };
+        println!(
+            "{} loaded {} page{} at {}",
+            dir_entry.path().to_string_lossy(),
+            num,
+            if num != 1 { "s" } else { "" },
+            full_path.to_string_lossy()
+        );
+        Ok(())
+    }
+
+    fn add_pdf_document(
+        &self,
+        dir_entry: &DirEntry,
+        pages_path: PathBuf,
+        full_path: &Path,
+    ) -> Result<u64> {
         // loop over pages
         let mut pdf_to_text_successful = true;
         let mut page_number = 0;
@@ -188,7 +224,7 @@ impl Index {
                 .arg(format!("{}", page_number))
                 .arg("-l")
                 .arg(format!("{}", page_number))
-                .arg(full_path_to_pdf.to_string_lossy().to_string())
+                .arg(full_path.to_string_lossy().to_string())
                 .arg(page_path.to_string_lossy().to_string());
 
             let pdf_to_text_output = pdf_to_text_call.output().map_err(|_| {
@@ -200,22 +236,39 @@ impl Index {
                 // read page-body from generated .txt file
                 let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
-                self.add_pdf_page(dir_entry.path(), page_number, &page_path, &page_body)?;
+                self.add_page(dir_entry.path(), page_number, &page_path, &page_body)?;
             }
         }
 
-        println!(
-            "{} loaded {} page{} at {}",
-            dir_entry.path().to_string_lossy(),
-            page_number,
-            if page_number != 1 { "s" } else { "" },
-            full_path_to_pdf.to_string_lossy()
-        );
-
-        Ok(())
+        Ok(page_number)
     }
 
-    fn add_pdf_page(
+    fn add_txt_document(
+        &self,
+        dir_entry: &DirEntry,
+        pages_path: PathBuf,
+        full_path: &Path,
+    ) -> Result<u64> {
+        let page_number = 1;
+        let mut page_path = pages_path.join(page_number.to_string());
+        page_path.set_extension("txt");
+        // Open the file in read-only mode
+        let mut file = File::open(full_path).map_err(|e| TxtParseError(e.to_string()))?;
+        // Store as page seperatly
+        let mut destination_file =
+            File::create(page_path.clone()).map_err(|e| TxtParseError(e.to_string()))?;
+        io::copy(&mut file, &mut destination_file).map_err(|e| TxtParseError(e.to_string()))?;
+        // Read the contents of the file into a string
+        let mut file = File::open(full_path).map_err(|e| TxtParseError(e.to_string()))?;
+        let mut body = String::new();
+        file.read_to_string(&mut body)
+            .map_err(|e| TxtParseError(e.to_string() + full_path.to_string_lossy().as_ref()))?;
+        // Finally, add page
+        self.add_page(dir_entry.path(), page_number, &page_path, &body)?;
+        Ok(page_number)
+    }
+
+    fn add_page(
         &self,
         full_path: &Path,
         page_number: u64,

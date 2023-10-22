@@ -45,6 +45,56 @@ fn get_first_term(query: &str) -> String {
     }
 }
 
+fn open_pdf(path: String, page: u32, term: String) -> Result<(), LittError> {
+    let mut cmd = std::process::Command::new("zathura");
+    cmd.arg(&path)
+        .arg("-P")
+        .arg(&page.to_string())
+        .arg("-f")
+        .arg(&term);
+
+    let zathura_was_successful = match cmd.status() {
+        Ok(status) => match status.code() {
+            None => false,
+            Some(code) => code == 0,
+        },
+        Err(_) => false,
+    };
+    if !zathura_was_successful {
+        println!(
+            "Consider installing zathura so we can open the PDF on the correct page for you.\n\
+Using standard system PDF viewer... {}",
+            path
+        );
+        open_std_programm(path)?;
+    }
+    Ok(())
+}
+
+fn open_std_programm(path: String) -> Result<(), LittError> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| LittError(e.to_string()))?;
+
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| LittError(e.to_string()))?;
+
+    #[cfg(windows)]
+    std::process::Command::new("cmd")
+        .arg("/c")
+        .arg("start")
+        .arg(&path.0)
+        .spawn()
+        .map_err(|e| LittError(e.to_string()))?;
+
+    Ok(())
+}
+
 fn main() -> Result<(), LittError> {
     let mut index_tracker = match IndexTracker::create(".litt".into()) {
         Ok(index_tracker) => index_tracker,
@@ -63,42 +113,11 @@ fn main() -> Result<(), LittError> {
             let path = fast_results
                 .get(last_result)
                 .expect("Number not in last results");
-            println!("Got path: {}", path.0);
-            let mut cmd = std::process::Command::new("zathura");
-            cmd.arg(&path.0)
-                .arg("-P")
-                .arg(&path.1.to_string())
-                .arg("-f")
-                .arg(&path.2);
-
-            let zathura_was_successful = match cmd.status() {
-                Ok(status) => match status.code() {
-                    None => false,
-                    Some(code) => code == 0,
-                },
-                Err(_) => false,
-            };
-
-            if !zathura_was_successful {
-                println!(
-                    "Consider installing zathura so we can open the PDF on the correct page for you.\n\
-        Using standard system PDF viewer..."
-                );
-                #[cfg(unix)]
-                std::process::Command::new("open")
-                    .arg(&path.0)
-                    .spawn()
-                    .map_err(|e| LittError(e.to_string()))?;
-
-                #[cfg(windows)]
-                std::process::Command::new("cmd")
-                    .arg("/c")
-                    .arg("start")
-                    .arg(&path.0)
-                    .spawn()
-                    .map_err(|e| LittError(e.to_string()))?;
+            if path.0.ends_with("pdf") {
+                open_pdf(path.0.clone(), path.1, path.2.clone())?;
+            } else {
+                open_std_programm(path.0.clone())?;
             }
-
             return Ok(());
         }
     }
@@ -160,7 +179,7 @@ fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError(e.to_string())),
         };
 
-        if let Err(e) = index.add_all_pdf_documents() {
+        if let Err(e) = index.add_all_documents() {
             return Err(LittError(e.to_string()));
         }
         println!(
@@ -201,7 +220,7 @@ fn main() -> Result<(), LittError> {
         println!("Updating index \"{}\".", index_name);
         let old_num_docs = index.searcher().num_docs();
         let start = Instant::now();
-        if let Err(e) = index.add_all_pdf_documents() {
+        if let Err(e) = index.add_all_documents() {
             return Err(LittError(e.to_string()));
         }
         println!(
