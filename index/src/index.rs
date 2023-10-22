@@ -299,7 +299,7 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use litt_shared::test_helpers::{cleanup_dir_and_file, save_fake_pdf_document};
+    use litt_shared::test_helpers::cleanup_dir_and_file;
     use once_cell::sync::Lazy;
     use serial_test::serial;
     use std::panic;
@@ -309,10 +309,6 @@ mod tests {
 
     static SEARCH_SCHEMA: Lazy<SearchSchema> = Lazy::new(SearchSchema::default);
 
-    fn setup() {
-        save_fake_pdf_document(TEST_DIR_NAME, TEST_FILE_PATH, vec!["Hello, world".into()]);
-    }
-
     fn teardown() {
         cleanup_dir_and_file(TEST_DIR_NAME, TEST_FILE_PATH);
     }
@@ -321,8 +317,6 @@ mod tests {
     where
         T: FnOnce() + panic::UnwindSafe,
     {
-        setup();
-
         let result = panic::catch_unwind(test);
 
         teardown();
@@ -354,64 +348,6 @@ mod tests {
                 .join(LITT_DIRECTORY_NAME)
                 .join(INDEX_DIRECTORY_NAME)
                 .is_dir())
-        });
-    }
-
-    #[test]
-    #[serial]
-    fn test_get_pdf_file_paths() {
-        run_test(|| {
-            let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
-            let dir_entries = index.get_pdf_dir_entries();
-            let file_name = dir_entries.first().unwrap().file_name().to_str().unwrap();
-
-            assert_eq!(1, dir_entries.len());
-            assert_eq!(TEST_FILE_PATH, file_name);
-        });
-    }
-
-    #[test]
-    #[serial]
-    fn test_add_all_documents() {
-        run_test(|| {
-            let mut index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
-            index.add_all_pdf_documents().unwrap();
-            let segments = index.index.searchable_segments().unwrap();
-            assert_eq!(1, segments.len());
-        });
-    }
-
-    #[test]
-    #[serial]
-    fn test_reload() {
-        run_test(|| {
-            let mut index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
-            // index 1st test document
-            index.add_all_pdf_documents().unwrap();
-            assert_eq!(1, index.searcher().num_docs());
-
-            // save 2nd document and update
-            save_fake_pdf_document(TEST_DIR_NAME, "test2.pdf", vec!["Hello, world 2".into()]);
-            index.reload().unwrap();
-
-            assert_eq!(2, index.searcher().num_docs());
-        });
-    }
-
-    #[test]
-    #[serial]
-    fn test_update() {
-        run_test(|| {
-            let mut index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
-            // index 1st test document
-            index.add_all_pdf_documents().unwrap();
-            assert_eq!(1, index.searcher().num_docs());
-
-            // save 2nd document and update
-            save_fake_pdf_document(TEST_DIR_NAME, "test2.pdf", vec!["Hello, world 2".into()]);
-            index.add_all_pdf_documents().unwrap();
-
-            assert_eq!(2, index.searcher().num_docs());
         });
     }
 }

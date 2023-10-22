@@ -10,4 +10,4 @@ crate-type = ["lib"]
 tantivy = "0.19.2"
 litt_shared = { path = "../shared" }
 litt_index = { path = "../index" }
-lopdf = { workspace = true }
+
