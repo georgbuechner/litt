@@ -36,6 +36,8 @@ jobs:
           else
             echo "::set-output name=should_run::false"
           fi
+      - name: Print output
+        run: echo "Should run ${{ steps.compare.outputs.should_run }}"
   build:
     needs: check_version
     if: needs.compare.outputs.should_run == 'true'
