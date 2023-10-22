@@ -8,6 +8,8 @@ on:
 jobs:
   check_version:
     runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.compare.outputs.should_run }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -40,7 +42,7 @@ jobs:
         run: echo "Should run ${{ steps.compare.outputs.should_run }}"
   build:
     needs: check_version
-    if: needs.compare.outputs.should_run == 'true'
+    if: needs.check_version.outputs.should_run == 'true'
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
