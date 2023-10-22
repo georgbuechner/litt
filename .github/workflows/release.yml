@@ -63,53 +63,37 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Download binaries from artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: binary-ubuntu-latest
-          path: binaries/ubuntu
-
-      - name: Download binaries from artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: binary-macOS-latest
-          path: binaries/macos
-
-      - name: Download binaries from artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: binary-windows-latest
-          path: binaries/windows
-
-      - name: Upload Release Asset (Ubuntu)
-        id: upload-release-asset-ubuntu
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download and Upload Release Assets
+        uses: ./.github/actions/download-upload-assets
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: binaries/ubuntu/litt
-          asset_name: litt-ubuntu-latest
-          asset_content_type: application/octet-stream
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: 'Download and Upload Release Assets'
+      - description: 'Download artifacts and upload them as release assets'
+      - inputs:
+        upload_url:
+          description: 'URL to upload release assets'
+          required: true
+        github_token:
+          description: 'GitHub token'
+          required: true
+      - runs:
+        using: 'composite'
+        steps:
+          - name: Download binaries from artifacts
+            uses: actions/download-artifact@v2
+            with:
+              name: binary-${{ matrix.os }}
+              path: binaries/${{ matrix.os }}
+            shell: bash
 
-      - name: Upload Release Asset (macOS)
-        id: upload-release-asset-macos
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: binaries/macos/litt
-          asset_name: litt-macOS-latest
-          asset_content_type: application/octet-stream
-
-      - name: Upload Release Asset (Windows)
-        id: upload-release-asset-windows
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: binaries/windows/litt.exe
-          asset_name: litt-windows-latest
-          asset_content_type: application/octet-stream
+          - name: Upload Release Asset
+            uses: actions/upload-release-asset@v1
+            env:
+              GITHUB_TOKEN: ${{ inputs.github_token }}
+            with:
+              upload_url: ${{ inputs.upload_url }}
+              asset_path: binaries/${{ matrix.os }}/litt${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+              asset_name: litt-${{ matrix.os }}
+              asset_content_type: application/octet-stream
+            shell: bash
