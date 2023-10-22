@@ -45,7 +45,8 @@ fn get_first_term(query: &str) -> String {
     }
 }
 
-fn main() -> Result<(), LittError> {
+#[tokio::main]
+async fn main() -> Result<(), LittError> {
     let mut index_tracker = match IndexTracker::create(".litt".into()) {
         Ok(index_tracker) => index_tracker,
         Err(e) => return Err(LittError(e.to_string())),
@@ -160,7 +161,7 @@ fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError(e.to_string())),
         };
 
-        if let Err(e) = index.add_all_documents() {
+        if let Err(e) = index.add_all_documents().await {
             return Err(LittError(e.to_string()));
         }
         println!(
@@ -201,7 +202,7 @@ fn main() -> Result<(), LittError> {
         println!("Updating index \"{}\".", index_name);
         let old_num_docs = index.searcher().num_docs();
         let start = Instant::now();
-        if let Err(e) = index.add_all_documents() {
+        if let Err(e) = index.add_all_documents().await {
             return Err(LittError(e.to_string()));
         }
         println!(
@@ -217,7 +218,7 @@ fn main() -> Result<(), LittError> {
         println!("Reloading index \"{}\".", index_name);
         let old_num_docs = index.searcher().num_docs();
         let start = Instant::now();
-        if let Err(e) = index.reload() {
+        if let Err(e) = index.reload().await {
             return Err(LittError(e.to_string()));
         }
         println!(

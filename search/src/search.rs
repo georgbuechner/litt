@@ -174,6 +174,7 @@ impl Search {
 #[cfg(test)]
 mod tests {
     use std::panic;
+    use std::panic::AssertUnwindSafe;
 
     use litt_shared::test_helpers::cleanup_litt_files;
 
@@ -184,34 +185,38 @@ mod tests {
     fn teardown() {
         cleanup_litt_files(TEST_DIR_NAME)
     }
-
     fn run_test<T>(test: T)
-    where
-        T: FnOnce() + panic::UnwindSafe,
+        where
+            T: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + panic::UnwindSafe,
     {
-        let result = panic::catch_unwind(test);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            runtime.block_on(test())
+        }));
 
         teardown();
 
         assert!(result.is_ok())
     }
 
-    fn create_searcher() -> Search {
+
+    async fn create_searcher() -> Search {
         let search_schema = SearchSchema::default();
         let mut index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
-        index.add_all_documents().unwrap();
+        index.add_all_documents().await.unwrap();
         println!("loaded {} document pages.", &index.searcher().num_docs());
         Search::new(index, search_schema)
     }
 
     #[test]
     fn test_search() {
-        run_test(|| {
-            let search = create_searcher();
+        run_test(|| Box::pin(async {
+            let search = create_searcher().await;
             test_normal_search(&search);
             test_fuzzy_search(&search);
             test_limit_and_offset(&search);
-        })
+        }))
     }
 
     fn test_normal_search(search: &Search) {

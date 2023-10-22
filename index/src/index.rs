@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::convert::AsRef;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use tokio::process::Command;
 use std::time::SystemTime;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
@@ -71,10 +71,10 @@ impl Index {
     }
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
-    pub fn add_all_documents(&mut self) -> Result<()> {
+    pub async fn add_all_documents(&mut self) -> Result<()> {
         let mut checksum_map = self.open_or_create_checksum_map()?;
         for path in self.collect_document_files() {
-            self.process_file(&mut checksum_map, path)?
+            self.process_file(&mut checksum_map, path).await?
         }
         self.store_checksum_map(&checksum_map)?;
 
@@ -90,7 +90,7 @@ impl Index {
         self.reader.reload().map_err(|e| ReloadError(e.to_string()))
     }
 
-    pub fn process_file(&mut self, checksum_map: &mut HashMap<String, (u64, SystemTime)>, path: DirEntry) -> Result<()> {
+    pub async fn process_file(&mut self, checksum_map: &mut HashMap<String, (u64, SystemTime)>, path: DirEntry) -> Result<()> {
         let relative_path = path
             .path()
             .strip_prefix(&self.documents_path)
@@ -102,7 +102,7 @@ impl Index {
             .unwrap_or(false)
         {
             println!("Adding document: {}", relative_path.to_string_lossy());
-            self.add_pdf_document_pages(&path)?;
+            self.add_pdf_document_pages(&path).await?;
             self.update_checksum(str_path, checksum_map)?;
         } else {
             println!(
@@ -114,7 +114,7 @@ impl Index {
     }
 
     /// For now, just delete existing index and index the documents again.
-    pub fn reload(&mut self) -> Result<()> {
+    pub async fn reload(&mut self) -> Result<()> {
         self.writer
             .delete_all_documents()
             .map_err(|e| UpdateError(e.to_string()))?;
@@ -122,7 +122,7 @@ impl Index {
             .join(LITT_DIRECTORY_NAME)
             .join(CHECK_SUM_MAP_FILENAME);
         _ = std::fs::remove_file(checksum_map);
-        self.add_all_documents()
+        Ok(self.add_all_documents().await.map_err(|e| CreationError(e.to_string())))?
     }
 
     pub fn searcher(&self) -> Searcher {
@@ -170,7 +170,7 @@ impl Index {
     }
 
     /// Add a tantivy document to the index for each page of the pdf document.
-    fn add_pdf_document_pages(&self, dir_entry: &DirEntry) -> Result<()> {
+    async fn add_pdf_document_pages(&self, dir_entry: &DirEntry) -> Result<()> {
         // Create custom directory to store all pages:
         let doc_id = Uuid::new_v4();
         let pages_path = self
@@ -200,7 +200,9 @@ impl Index {
                 .arg(full_path_to_pdf.to_string_lossy().to_string())
                 .arg(page_path.to_string_lossy().to_string());
 
-            let pdf_to_text_output = pdf_to_text_call.output().map_err(|_| {
+            let pdf_to_text_output = pdf_to_text_call.output()
+                .await
+                .map_err(|_| {
                 PdfParseError("Make sure pdftotext is set up correctly and installed (usually part of xpdf (Windows) or poppler (Linux/Mac))".into())
             })?;
             pdf_to_text_successful = pdf_to_text_output.status.success();
