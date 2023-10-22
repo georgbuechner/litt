@@ -215,14 +215,22 @@ fn main() -> Result<(), LittError> {
         Ok(index) => index,
         Err(e) => return Err(LittError(e.to_string())),
     };
-    let searcher = index.searcher().map_err(|e| LittError(e.to_string()))?;
+    let readable_index = match index {
+        Index::Writing { .. } => index
+            .add_all_documents()
+            .map_err(|e| LittError(e.to_string()))?,
+        Index::Reading { .. } => index,
+    };
+    let searcher = readable_index
+        .searcher()
+        .map_err(|e| LittError(e.to_string()))?;
 
     // update existing index
     if cli.update {
         println!("Updating index \"{}\".", index_name);
         let old_num_docs = searcher.num_docs();
         let start = Instant::now();
-        if let Err(e) = index.add_all_documents() {
+        if let Err(e) = readable_index.add_all_documents() {
             return Err(LittError(e.to_string()));
         }
         println!(
@@ -240,7 +248,7 @@ fn main() -> Result<(), LittError> {
         println!("Reloading index \"{}\".", index_name);
         let old_num_docs = searcher.num_docs();
         let start = Instant::now();
-        if let Err(e) = index.reload() {
+        if let Err(e) = readable_index.reload() {
             return Err(LittError(e.to_string()));
         }
         println!(
@@ -261,7 +269,7 @@ fn main() -> Result<(), LittError> {
             cli.term
         );
         let start = Instant::now();
-        let search = Search::new(index, SearchSchema::default());
+        let search = Search::new(readable_index, SearchSchema::default());
         let search_term = if !cli.fuzzy {
             litt_search::search::SearchTerm::Exact(cli.term.clone())
         } else {
