@@ -185,8 +185,7 @@ fn main() -> Result<(), LittError> {
         }
         println!(
             "Successfully indexed {} document pages in {:?}",
-            searcher
-                .num_docs(),
+            searcher.num_docs(),
             start.elapsed()
         );
         return Ok(());

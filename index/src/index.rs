@@ -1,7 +1,11 @@
-use crate::LittIndexError::{CreationError, OpenError, PdfParseError, ReadError, ReloadError, TxtParseError, UpdateError, WriteError};
+use crate::LittIndexError::{
+    CreationError, OpenError, PdfParseError, ReadError, ReloadError, TxtParseError, UpdateError,
+    WriteError,
+};
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::convert::AsRef;
 use std::fs::{create_dir_all, File};
@@ -10,7 +14,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-use rayon::prelude::*;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
@@ -25,8 +28,18 @@ const CHECK_SUM_MAP_FILENAME: &str = "checksum.json";
 const TARGET_MEMORY_BYTES: usize = 100_000_000;
 
 pub enum Index {
-    Writing{index: Arc<Mutex<TantivyIndex>>, schema: SearchSchema, documents_path: PathBuf, writer: IndexWriter},
-    Reading{index: TantivyIndex, schema: SearchSchema, reader: IndexReader, documents_path: PathBuf}
+    Writing {
+        index: Arc<Mutex<TantivyIndex>>,
+        schema: SearchSchema,
+        documents_path: PathBuf,
+        writer: IndexWriter,
+    },
+    Reading {
+        index: TantivyIndex,
+        schema: SearchSchema,
+        reader: IndexReader,
+        documents_path: PathBuf,
+    },
 }
 
 impl Index {
@@ -57,12 +70,22 @@ impl Index {
         match index_create_result {
             Ok(index) => {
                 let writer = Self::build_writer(&index)?;
-                Ok(Self::Writing {documents_path, index: Arc::new(Mutex::new(index)), writer, schema})
+                Ok(Self::Writing {
+                    documents_path,
+                    index: Arc::new(Mutex::new(index)),
+                    writer,
+                    schema,
+                })
             }
             Err(_) => {
                 let index = Self::open_index(&index_path)?;
                 let reader = Self::build_reader(&index)?;
-                Ok(Self::Reading {index, schema, reader, documents_path })
+                Ok(Self::Reading {
+                    index,
+                    schema,
+                    reader,
+                    documents_path,
+                })
             }
         }
     }
@@ -74,8 +97,8 @@ impl Index {
             .collect_document_files()
             .par_iter()
             .map(|path| {
-                let mut checksum_map = Arc::clone(&checksum_map);
-                Self::process_file( &self, &mut checksum_map, path.clone())
+                let checksum_map = Arc::clone(&checksum_map);
+                Self::process_file(&self, &checksum_map, path.clone())
             })
             .collect();
 
@@ -88,10 +111,14 @@ impl Index {
         // index_writer to finish processing the documents in the queue,
         // flush the current index to the disk, and advertise
         // the existence of new documents.
-        if let Index::Writing {index: index_mutex, schema, documents_path, mut writer } = self {
-            writer
-                .commit()
-                .map_err(|e| WriteError(e.to_string()))?;
+        if let Index::Writing {
+            index: index_mutex,
+            schema,
+            documents_path,
+            mut writer,
+        } = self
+        {
+            writer.commit().map_err(|e| WriteError(e.to_string()))?;
             let index = Arc::try_unwrap(index_mutex).unwrap().into_inner().unwrap();
             let reader = Self::build_reader(&index)?;
             reader.reload().map_err(|e| ReloadError(e.to_string()))?;
@@ -99,11 +126,14 @@ impl Index {
                 index,
                 schema,
                 reader,
-                documents_path
+                documents_path,
             };
             Ok(self)
-        } else{ Err(WriteError("Wrong index state – must be \"Writing\"!".to_string()))}
-
+        } else {
+            Err(WriteError(
+                "Wrong index state – must be \"Writing\"!".to_string(),
+            ))
+        }
     }
 
     pub fn process_file(
@@ -111,28 +141,27 @@ impl Index {
         checksum_map: &Arc<Mutex<HashMap<String, (u64, SystemTime)>>>,
         path: DirEntry,
     ) -> Result<()> {
-        if let Index::Writing {documents_path, ..} = &self {
+        if let Index::Writing { documents_path, .. } = &self {
+            let relative_path = path
+                .path()
+                .strip_prefix(documents_path)
+                .map_err(|e| CreationError(e.to_string()))?;
 
-        let relative_path = path
-            .path()
-            .strip_prefix(&documents_path)
-            .map_err(|e| CreationError(e.to_string()))?;
-
-        let str_path = &path.path().to_string_lossy().to_string();
-        if !&self
-            .compare_checksum(str_path, checksum_map)
-            .unwrap_or(false)
-        {
-            println!("Adding document: {}", relative_path.to_string_lossy());
-            self.add_document(&path)?;
-            self.update_checksum(str_path, checksum_map)?;
-        } else {
-            println!(
-                "Skipped (already exists): {}",
-                relative_path.to_string_lossy()
-            );
-        }
-        Ok(())
+            let str_path = &path.path().to_string_lossy().to_string();
+            if !&self
+                .compare_checksum(str_path, checksum_map)
+                .unwrap_or(false)
+            {
+                println!("Adding document: {}", relative_path.to_string_lossy());
+                self.add_document(&path)?;
+                self.update_checksum(str_path, checksum_map)?;
+            } else {
+                println!(
+                    "Skipped (already exists): {}",
+                    relative_path.to_string_lossy()
+                );
+            }
+            Ok(())
         } else {
             Err(CreationError("Wrong index state!".to_string()))
         }
@@ -140,8 +169,13 @@ impl Index {
 
     /// For now, just delete existing index and index the documents again.
     pub fn reload(self) -> Result<Self> {
-        if let Index::Reading {ref index, ref documents_path, ..} = self {
-            let writer = Self::build_writer(&index)?;
+        if let Index::Reading {
+            ref index,
+            ref documents_path,
+            ..
+        } = self
+        {
+            let writer = Self::build_writer(index)?;
             writer
                 .delete_all_documents()
                 .map_err(|e| UpdateError(e.to_string()))?;
@@ -151,23 +185,29 @@ impl Index {
             _ = std::fs::remove_file(checksum_map);
             self.add_all_documents()
         } else {
-            Err(ReloadError("Wrong index state – must be \"Reading\"!".to_string()))
+            Err(ReloadError(
+                "Wrong index state – must be \"Reading\"!".to_string(),
+            ))
         }
     }
 
     pub fn searcher(&self) -> Result<Searcher> {
-        if let Index::Reading {reader, ..} = self {
+        if let Index::Reading { reader, .. } = self {
             Ok(reader.searcher())
         } else {
-            Err(ReadError("Wrong index state – must be \"Reading\"!".to_string()))
+            Err(ReadError(
+                "Wrong index state – must be \"Reading\"!".to_string(),
+            ))
         }
     }
 
     pub fn query_parser(&self) -> Result<QueryParser> {
-        if let Index::Reading {index, schema, ..} = self {
+        if let Index::Reading { index, schema, .. } = self {
             Ok(QueryParser::for_index(index, schema.default_fields()))
         } else {
-            Err(ReadError("Wrong index state – must be \"Reading\"!".to_string()))
+            Err(ReadError(
+                "Wrong index state – must be \"Reading\"!".to_string(),
+            ))
         }
     }
 
@@ -196,9 +236,9 @@ impl Index {
     fn collect_document_files(&self) -> Vec<DirEntry> {
         let documents_path = match self {
             Index::Writing { documents_path, .. } => documents_path,
-            Index::Reading { documents_path, .. } => documents_path
+            Index::Reading { documents_path, .. } => documents_path,
         };
-        let walk_dir = WalkDir::new(&documents_path);
+        let walk_dir = WalkDir::new(documents_path);
         walk_dir
             .follow_links(true)
             .into_iter()
@@ -213,30 +253,31 @@ impl Index {
 
     /// Add a tantivy document to the index for each page of the document.
     fn add_document(&self, dir_entry: &DirEntry) -> Result<()> {
-        if let Index::Writing {documents_path, ..} = self {
-        // Create custom directory to store all pages:
-        let doc_id = Uuid::new_v4();
-        let pages_path = documents_path
-            .join(LITT_DIRECTORY_NAME)
-            .join(PAGES_DIRECTORY_NAME)
-            .join(doc_id.to_string());
-        create_dir_all(&pages_path).map_err(|e| CreationError(e.to_string()))?;
-        let full_path = dir_entry.path();
+        if let Index::Writing { documents_path, .. } = self {
+            // Create custom directory to store all pages:
+            let doc_id = Uuid::new_v4();
+            let pages_path = documents_path
+                .join(LITT_DIRECTORY_NAME)
+                .join(PAGES_DIRECTORY_NAME)
+                .join(doc_id.to_string());
+            create_dir_all(&pages_path).map_err(|e| CreationError(e.to_string()))?;
+            let full_path = dir_entry.path();
 
-        // Check filetype (pdf/ txt)
-        let num = if full_path.to_string_lossy().ends_with("pdf") {
-            self.add_pdf_document(dir_entry, pages_path, full_path)?
+            // Check filetype (pdf/ txt)
+            let num = if full_path.to_string_lossy().ends_with("pdf") {
+                self.add_pdf_document(dir_entry, pages_path, full_path)?
+            } else {
+                self.add_txt_document(dir_entry, pages_path, full_path)?
+            };
+            println!(
+                "{} loaded {} page{} at {}",
+                dir_entry.path().to_string_lossy(),
+                num,
+                if num != 1 { "s" } else { "" },
+                full_path.to_string_lossy()
+            );
+            Ok(())
         } else {
-            self.add_txt_document(dir_entry, pages_path, full_path)?
-        };
-        println!(
-            "{} loaded {} page{} at {}",
-            dir_entry.path().to_string_lossy(),
-            num,
-            if num != 1 { "s" } else { "" },
-            full_path.to_string_lossy()
-        );
-        Ok(()) } else {
             Err(WriteError("Wrong state, must be \"Writing\"!".to_string()))
         }
     }
@@ -314,53 +355,58 @@ impl Index {
         page_path: &Path,
         page_body: &str,
     ) -> Result<()> {
-        if let Index::Writing {documents_path, schema, writer, ..} = self {
-        let relative_path = full_path
-            .strip_prefix(&documents_path)
-            .map_err(|e| CreationError(e.to_string()))?;
-        // documents_path base from path
-        let mut tantivy_document = TantivyDocument::new();
+        if let Index::Writing {
+            documents_path,
+            schema,
+            writer,
+            ..
+        } = self
+        {
+            let relative_path = full_path
+                .strip_prefix(documents_path)
+                .map_err(|e| CreationError(e.to_string()))?;
+            // documents_path base from path
+            let mut tantivy_document = TantivyDocument::new();
 
-        // add fields to tantivy document
-        tantivy_document.add_text(schema.path, page_path.to_string_lossy());
-        tantivy_document.add_text(schema.title, relative_path.to_string_lossy());
-        tantivy_document.add_u64(schema.page, page_number);
-        tantivy_document.add_text(schema.body, page_body);
-        writer
-            .add_document(tantivy_document)
-            .map_err(|e| WriteError(e.to_string()))?;
-        Ok(())
+            // add fields to tantivy document
+            tantivy_document.add_text(schema.path, page_path.to_string_lossy());
+            tantivy_document.add_text(schema.title, relative_path.to_string_lossy());
+            tantivy_document.add_u64(schema.page, page_number);
+            tantivy_document.add_text(schema.body, page_body);
+            writer
+                .add_document(tantivy_document)
+                .map_err(|e| WriteError(e.to_string()))?;
+            Ok(())
         } else {
             Err(WriteError("Wrong state, must be \"Writing\"!".to_string()))
         }
     }
 
     fn open_or_create_checksum_map(&self) -> Result<Mutex<HashMap<String, (u64, SystemTime)>>> {
-        if let Index::Writing {documents_path, ..} = self {
+        if let Index::Writing { documents_path, .. } = self {
+            let path = documents_path
+                .join(LITT_DIRECTORY_NAME)
+                .join(CHECK_SUM_MAP_FILENAME);
+            if Path::new(&path).exists() {
+                let data =
+                    std::fs::read_to_string(path).map_err(|e| CreationError(e.to_string()))?;
 
-        let path = documents_path
-            .join(LITT_DIRECTORY_NAME)
-            .join(CHECK_SUM_MAP_FILENAME);
-        if Path::new(&path).exists() {
-            let data = std::fs::read_to_string(path).map_err(|e| CreationError(e.to_string()))?;
-
-            Ok(serde_json::from_str(&data).map_err(|e| CreationError(e.to_string()))?)
-        } else {
-            Ok(Mutex::new(HashMap::new()))
-        }
+                Ok(serde_json::from_str(&data).map_err(|e| CreationError(e.to_string()))?)
+            } else {
+                Ok(Mutex::new(HashMap::new()))
+            }
         } else {
             Err(WriteError("Wrong state, must be \"Writing\"!".to_string()))
         }
     }
 
     fn store_checksum_map(&self, checksum_map: &HashMap<String, (u64, SystemTime)>) -> Result<()> {
-        if let Index::Writing {documents_path, ..} = self {
-
-        let path = documents_path
-            .join(LITT_DIRECTORY_NAME)
-            .join(CHECK_SUM_MAP_FILENAME);
-        std::fs::write(path, serde_json::to_string(&checksum_map).unwrap())
-            .map_err(|e| CreationError(e.to_string()))
+        if let Index::Writing { documents_path, .. } = self {
+            let path = documents_path
+                .join(LITT_DIRECTORY_NAME)
+                .join(CHECK_SUM_MAP_FILENAME);
+            std::fs::write(path, serde_json::to_string(&checksum_map).unwrap())
+                .map_err(|e| CreationError(e.to_string()))
         } else {
             Err(WriteError("Wrong state, must be \"Writing\"!".to_string()))
         }
@@ -377,7 +423,8 @@ impl Index {
             .modified()
             .map_err(|e| CreationError(e.to_string()))?;
 
-        checksum_map.lock()
+        checksum_map
+            .lock()
             .map_err(|e| CreationError(e.to_string()))?
             .insert(path.to_string(), (metadata.len(), modified));
         Ok(())
@@ -394,7 +441,11 @@ impl Index {
             .modified()
             .map_err(|e| CreationError(e.to_string()))?;
 
-        if let Some((len, last_modified)) = checksum_map.lock().map_err(|e| CreationError(e.to_string()))?.get(path) {
+        if let Some((len, last_modified)) = checksum_map
+            .lock()
+            .map_err(|e| CreationError(e.to_string()))?
+            .get(path)
+        {
             Ok(*len == metadata.len() && *last_modified == modified)
         } else {
             Ok(false)
@@ -436,8 +487,12 @@ mod tests {
         run_test(|| {
             let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
             let (index_schema, index_path) = match index {
-                Index::Writing { schema, documents_path, .. } => (schema, documents_path),
-                Index::Reading { .. } => panic!("Wrong index state")
+                Index::Writing {
+                    schema,
+                    documents_path,
+                    ..
+                } => (schema, documents_path),
+                Index::Reading { .. } => panic!("Wrong index state"),
             };
             assert_eq!(SEARCH_SCHEMA.clone().schema, index_schema.schema);
             assert_eq!(PathBuf::from(TEST_DIR_NAME), index_path);
@@ -453,8 +508,12 @@ mod tests {
             let opened_index = Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
 
             let (index_schema, index_path) = match opened_index {
-                Index::Reading { schema, documents_path, .. } => (schema, documents_path),
-                Index::Writing { .. } => panic!("Wrong index state")
+                Index::Reading {
+                    schema,
+                    documents_path,
+                    ..
+                } => (schema, documents_path),
+                Index::Writing { .. } => panic!("Wrong index state"),
             };
 
             assert_eq!(SEARCH_SCHEMA.clone().schema, index_schema.schema);

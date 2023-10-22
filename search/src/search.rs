@@ -51,16 +51,26 @@ impl Search {
         offset: usize,
         limit: usize,
     ) -> Result<HashMap<String, LinkedList<SearchResult>>> {
-        let searcher = self.index.searcher().map_err(|e| SearchError(e.to_string()))?;
+        let searcher = self
+            .index
+            .searcher()
+            .map_err(|e| SearchError(e.to_string()))?;
 
         let (query_parser, term) = match input {
             SearchTerm::Fuzzy(term, distance) => {
-                let mut query_parser = self.index.query_parser().map_err(|e| SearchError(e.to_string()))?;
-                query_parser
-                    .set_field_fuzzy(self.schema.body, true, *distance, true);
+                let mut query_parser = self
+                    .index
+                    .query_parser()
+                    .map_err(|e| SearchError(e.to_string()))?;
+                query_parser.set_field_fuzzy(self.schema.body, true, *distance, true);
                 (query_parser, term)
             }
-            SearchTerm::Exact(term) => (self.index.query_parser().map_err(|e| SearchError(e.to_string()))?, term),
+            SearchTerm::Exact(term) => (
+                self.index
+                    .query_parser()
+                    .map_err(|e| SearchError(e.to_string()))?,
+                term,
+            ),
         };
 
         let query = query_parser
@@ -119,7 +129,10 @@ impl Search {
         search_term: &SearchTerm,
     ) -> Result<String> {
         // Prepare creating snippet.
-        let searcher = self.index.searcher().map_err(|e| SearchError(e.to_string()))?;
+        let searcher = self
+            .index
+            .searcher()
+            .map_err(|e| SearchError(e.to_string()))?;
         let (query_parser, term) = match search_term {
             SearchTerm::Fuzzy(_, _) => return Ok("[fuzzy match] No preview. We're sry.".into()),
             SearchTerm::Exact(term) => (self.index.query_parser(), term),
@@ -201,10 +214,13 @@ mod tests {
     fn create_searcher() -> Result<Search> {
         let search_schema = SearchSchema::default();
         let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
-        let readable_index = index.add_all_documents().map_err(|e| SearchError(e.to_string()))?;
-        let searcher = readable_index.searcher().map_err(|e| SearchError(e.to_string()))?;
-        println!("loaded {} document pages.", searcher
-            .num_docs());
+        let readable_index = index
+            .add_all_documents()
+            .map_err(|e| SearchError(e.to_string()))?;
+        let searcher = readable_index
+            .searcher()
+            .map_err(|e| SearchError(e.to_string()))?;
+        println!("loaded {} document pages.", searcher.num_docs());
         Ok(Search::new(readable_index, search_schema))
     }
 
