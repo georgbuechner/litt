@@ -3,7 +3,7 @@ name: Release Binaries
 on:
   push:
     branches:
-      - ci/44-create-prebuilt-binaries-in-gh-action
+      - main
 
 jobs:
   check_version:
