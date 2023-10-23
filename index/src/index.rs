@@ -216,7 +216,7 @@ impl Index {
             page_number += 1;
             // finalize page output path (to the location where all pages are stored)
             let mut page_path = pages_path.join(page_number.to_string());
-            page_path.set_extension("txt");
+            page_path.set_extension("pageinfo");
             // get page body
             let mut pdf_to_text_call = Command::new("pdftotext");
             pdf_to_text_call
@@ -251,7 +251,7 @@ impl Index {
     ) -> Result<u64> {
         let page_number = 1;
         let mut page_path = pages_path.join(page_number.to_string());
-        page_path.set_extension("txt");
+        page_path.set_extension("pageinfo");
         // Open the file in read-only mode
         let mut file = File::open(full_path).map_err(|e| TxtParseError(e.to_string()))?;
         // Store as page seperatly
