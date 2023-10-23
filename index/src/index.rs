@@ -103,7 +103,10 @@ impl Index {
             .collect();
 
         // Once done, you can retrieve the map back from the Arc<Mutex<T>>
-        let checksum_map = Arc::try_unwrap(checksum_map).unwrap().into_inner().unwrap();
+        let checksum_map = Arc::into_inner(checksum_map)
+            .ok_or(CreationError("Unable to access checksum map".to_string()))?
+            .into_inner()
+            .map_err(|e| CreationError(e.to_string()))?;
         self.store_checksum_map(&checksum_map)?;
         results?;
 
@@ -119,7 +122,10 @@ impl Index {
         } = self
         {
             writer.commit().map_err(|e| WriteError(e.to_string()))?;
-            let index = Arc::try_unwrap(index_mutex).unwrap().into_inner().unwrap();
+            let index = Arc::into_inner(index_mutex)
+                .ok_or(WriteError("Unable to access Index for writing".to_string()))?
+                .into_inner()
+                .map_err(|e| WriteError(e.to_string()))?;
             let reader = Self::build_reader(&index)?;
             reader.reload().map_err(|e| ReloadError(e.to_string()))?;
             self = Index::Reading {
@@ -418,8 +424,11 @@ impl Index {
             let path = documents_path
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
-            std::fs::write(path, serde_json::to_string(&checksum_map).unwrap())
-                .map_err(|e| CreationError(e.to_string()))
+            std::fs::write(
+                path,
+                serde_json::to_string(&checksum_map).map_err(|e| CreationError(e.to_string()))?,
+            )
+            .map_err(|e| CreationError(e.to_string()))
         } else {
             Err(StateError("Writing".to_string()))
         }
