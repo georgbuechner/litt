@@ -230,18 +230,20 @@ fn main() -> Result<(), LittError> {
         println!("Updating index \"{}\".", index_name);
         let old_num_docs = searcher.num_docs();
         let start = Instant::now();
-        if let Err(e) = readable_index.add_all_documents() {
-            return Err(LittError(e.to_string()));
-        }
-        println!(
-            "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
-            searcher
-                .num_docs()-old_num_docs,
-            start.elapsed(),
-            searcher
-                .num_docs(),
-        );
-        return Ok(());
+        return match readable_index.update() {
+            Ok(_) => {
+                println!(
+                    "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
+                    searcher
+                        .num_docs()-old_num_docs,
+                    start.elapsed(),
+                    searcher
+                        .num_docs(),
+                );
+                Ok(())
+            }
+            Err(e) => Err(LittError(e.to_string())),
+        };
     }
     // reload existing index
     if cli.reload {

@@ -1,5 +1,5 @@
 use crate::LittIndexError::{
-    CreationError, OpenError, PdfParseError, ReadError, ReloadError, TxtParseError, UpdateError,
+    CreationError, OpenError, PdfParseError, ReloadError, StateError, TxtParseError, UpdateError,
     WriteError,
 };
 use crate::Result;
@@ -130,9 +130,28 @@ impl Index {
             };
             Ok(self)
         } else {
-            Err(WriteError(
-                "Wrong index state – must be \"Writing\"!".to_string(),
-            ))
+            Err(StateError("Writing".to_string()))
+        }
+    }
+
+    pub fn update(mut self) -> Result<Self> {
+        if let Index::Reading {
+            index,
+            documents_path,
+            schema,
+            ..
+        } = self
+        {
+            let writer = Self::build_writer(&index).map_err(|e| UpdateError(e.to_string()))?;
+            self = Index::Writing {
+                index: Arc::new(Mutex::new(index)),
+                schema,
+                documents_path,
+                writer,
+            };
+            self.add_all_documents()
+        } else {
+            Err(StateError("Reading".to_string()))
         }
     }
 
@@ -163,7 +182,7 @@ impl Index {
             }
             Ok(())
         } else {
-            Err(CreationError("Wrong index state!".to_string()))
+            Err(StateError("Writing".to_string()))
         }
     }
 
@@ -185,9 +204,7 @@ impl Index {
             _ = std::fs::remove_file(checksum_map);
             self.add_all_documents()
         } else {
-            Err(ReloadError(
-                "Wrong index state – must be \"Reading\"!".to_string(),
-            ))
+            Err(StateError("Reading".to_string()))
         }
     }
 
@@ -195,9 +212,7 @@ impl Index {
         if let Index::Reading { reader, .. } = self {
             Ok(reader.searcher())
         } else {
-            Err(ReadError(
-                "Wrong index state – must be \"Reading\"!".to_string(),
-            ))
+            Err(StateError("Reading".to_string()))
         }
     }
 
@@ -205,9 +220,7 @@ impl Index {
         if let Index::Reading { index, schema, .. } = self {
             Ok(QueryParser::for_index(index, schema.default_fields()))
         } else {
-            Err(ReadError(
-                "Wrong index state – must be \"Reading\"!".to_string(),
-            ))
+            Err(StateError("Reading".to_string()))
         }
     }
 
@@ -278,7 +291,7 @@ impl Index {
             );
             Ok(())
         } else {
-            Err(WriteError("Wrong state, must be \"Writing\"!".to_string()))
+            Err(StateError("Writing".to_string()))
         }
     }
 
@@ -378,7 +391,7 @@ impl Index {
                 .map_err(|e| WriteError(e.to_string()))?;
             Ok(())
         } else {
-            Err(WriteError("Wrong state, must be \"Writing\"!".to_string()))
+            Err(StateError("Writing".to_string()))
         }
     }
 
@@ -396,7 +409,7 @@ impl Index {
                 Ok(Mutex::new(HashMap::new()))
             }
         } else {
-            Err(WriteError("Wrong state, must be \"Writing\"!".to_string()))
+            Err(StateError("Writing".to_string()))
         }
     }
 
@@ -408,7 +421,7 @@ impl Index {
             std::fs::write(path, serde_json::to_string(&checksum_map).unwrap())
                 .map_err(|e| CreationError(e.to_string()))
         } else {
-            Err(WriteError("Wrong state, must be \"Writing\"!".to_string()))
+            Err(StateError("Writing".to_string()))
         }
     }
 
