@@ -29,7 +29,7 @@ const TARGET_MEMORY_BYTES: usize = 100_000_000;
 
 pub enum Index {
     Writing {
-        index: Arc<Mutex<TantivyIndex>>,
+        index: TantivyIndex,
         schema: SearchSchema,
         documents_path: PathBuf,
         writer: IndexWriter,
@@ -53,7 +53,7 @@ impl Index {
         let writer = Self::build_writer(&index)?;
         Ok(Self::Writing {
             documents_path,
-            index: Arc::new(Mutex::new(index)),
+            index,
             writer,
             schema,
         })
@@ -72,7 +72,7 @@ impl Index {
                 let writer = Self::build_writer(&index)?;
                 Ok(Self::Writing {
                     documents_path,
-                    index: Arc::new(Mutex::new(index)),
+                    index,
                     writer,
                     schema,
                 })
@@ -98,7 +98,7 @@ impl Index {
             .par_iter()
             .map(|path| {
                 let checksum_map = Arc::clone(&checksum_map);
-                Self::process_file(&self, &checksum_map, path.clone())
+                self.process_file(&checksum_map, path.clone())
             })
             .collect();
 
@@ -115,17 +115,13 @@ impl Index {
         // flush the current index to the disk, and advertise
         // the existence of new documents.
         if let Index::Writing {
-            index: index_mutex,
+            index,
             schema,
             documents_path,
             mut writer,
         } = self
         {
             writer.commit().map_err(|e| WriteError(e.to_string()))?;
-            let index = Arc::into_inner(index_mutex)
-                .ok_or(WriteError("Unable to access Index for writing".to_string()))?
-                .into_inner()
-                .map_err(|e| WriteError(e.to_string()))?;
             let reader = Self::build_reader(&index)?;
             reader.reload().map_err(|e| ReloadError(e.to_string()))?;
             self = Index::Reading {
@@ -150,7 +146,7 @@ impl Index {
         {
             let writer = Self::build_writer(&index).map_err(|e| UpdateError(e.to_string()))?;
             self = Index::Writing {
-                index: Arc::new(Mutex::new(index)),
+                index,
                 schema,
                 documents_path,
                 writer,
