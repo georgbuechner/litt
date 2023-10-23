@@ -58,6 +58,21 @@ impl Index {
         })
     }
 
+    pub fn open(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
+        let documents_path = PathBuf::from(path.as_ref());
+        let index_path = documents_path
+            .join(LITT_DIRECTORY_NAME)
+            .join(INDEX_DIRECTORY_NAME);
+        let index = Self::open_tantivy_index(&index_path)?;
+        let reader = Self::build_reader(&index)?;
+        Ok(Self::Reading {
+            index,
+            schema,
+            reader,
+            documents_path,
+        })
+    }
+
     pub fn open_or_create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
         // TODO make search schema parameter optional and load schema from existing index
         let documents_path = PathBuf::from(path.as_ref());
@@ -76,16 +91,7 @@ impl Index {
                     schema,
                 })
             }
-            Err(_) => {
-                let index = Self::open_index(&index_path)?;
-                let reader = Self::build_reader(&index)?;
-                Ok(Self::Reading {
-                    index,
-                    schema,
-                    reader,
-                    documents_path,
-                })
-            }
+            Err(_) => Self::open(path, schema),
         }
     }
 
@@ -223,7 +229,7 @@ impl Index {
         TantivyIndex::create_in_dir(path, schema).map_err(|e| CreationError(e.to_string()))
     }
 
-    fn open_index(path: &PathBuf) -> Result<TantivyIndex> {
+    fn open_tantivy_index(path: &PathBuf) -> Result<TantivyIndex> {
         TantivyIndex::open_in_dir(path).map_err(|e| OpenError(e.to_string()))
     }
 

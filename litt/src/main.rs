@@ -213,13 +213,11 @@ fn main() -> Result<(), LittError> {
     let index_path = index_tracker
         .get_path(&index_name)
         .map_err(|e| LittError(e.to_string()))?;
-    let index = match Index::open_or_create(index_path.clone(), SearchSchema::default()) {
+    let index = match Index::open(index_path.clone(), SearchSchema::default()) {
         Ok(index) => index,
         Err(e) => return Err(LittError(e.to_string())),
     };
-    let searcher = index
-        .searcher()
-        .map_err(|e| LittError(e.to_string()))?;
+    let searcher = index.searcher().map_err(|e| LittError(e.to_string()))?;
 
     // update existing index
     if cli.update {
