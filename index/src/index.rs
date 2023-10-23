@@ -12,7 +12,6 @@ use std::fs::{create_dir_all, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
@@ -92,23 +91,20 @@ impl Index {
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
     pub fn add_all_documents(mut self) -> Result<Self> {
-        let checksum_map = Arc::new(self.open_or_create_checksum_map()?);
-        let results: Result<Vec<_>> = self
-            .collect_document_files()
+        let checksum_map = self.open_or_create_checksum_map()?;
+        let dir_entries = self.collect_document_files();
+
+        let new_checksum_map_result: Result<HashMap<_, _>> = dir_entries
             .par_iter()
             .map(|path| {
-                let checksum_map = Arc::clone(&checksum_map);
-                self.process_file(&checksum_map, path.clone())
+                let key = path.path().to_string_lossy().to_string();
+                let existing_checksum = checksum_map.get(&key);
+                self.process_file(path, existing_checksum)
             })
             .collect();
 
-        // Once done, you can retrieve the map back from the Arc<Mutex<T>>
-        let checksum_map = Arc::into_inner(checksum_map)
-            .ok_or(CreationError("Unable to access checksum map".to_string()))?
-            .into_inner()
-            .map_err(|e| CreationError(e.to_string()))?;
-        self.store_checksum_map(&checksum_map)?;
-        results?;
+        let new_checksum_map = new_checksum_map_result?;
+        self.store_checksum_map(new_checksum_map)?;
 
         // We need to call .commit() explicitly to force the
         // index_writer to finish processing the documents in the queue,
@@ -159,30 +155,27 @@ impl Index {
 
     pub fn process_file(
         &self,
-        checksum_map: &Arc<Mutex<HashMap<String, (u64, SystemTime)>>>,
-        path: DirEntry,
-    ) -> Result<()> {
+        path: &DirEntry,
+        existing_checksum: Option<&(u64, SystemTime)>,
+    ) -> Result<(String, (u64, SystemTime))> {
         if let Index::Writing { documents_path, .. } = &self {
             let relative_path = path
                 .path()
                 .strip_prefix(documents_path)
                 .map_err(|e| CreationError(e.to_string()))?;
 
-            let str_path = &path.path().to_string_lossy().to_string();
-            if !&self
-                .compare_checksum(str_path, checksum_map)
-                .unwrap_or(false)
-            {
+            let str_path = path.path().to_string_lossy().to_string();
+            if !Self::checksum_is_equal(&str_path, existing_checksum).unwrap_or(false) {
                 println!("Adding document: {}", relative_path.to_string_lossy());
-                self.add_document(&path)?;
-                self.update_checksum(str_path, checksum_map)?;
+                self.add_document(path)?;
+                return Self::calculate_checksum(&str_path);
             } else {
                 println!(
                     "Skipped (already exists): {}",
                     relative_path.to_string_lossy()
                 );
             }
-            Ok(())
+            Ok((str_path.to_string(), *(existing_checksum.unwrap())))
         } else {
             Err(StateError("Writing".to_string()))
         }
@@ -397,7 +390,7 @@ impl Index {
         }
     }
 
-    fn open_or_create_checksum_map(&self) -> Result<Mutex<HashMap<String, (u64, SystemTime)>>> {
+    fn open_or_create_checksum_map(&self) -> Result<HashMap<String, (u64, SystemTime)>> {
         if let Index::Writing { documents_path, .. } = self {
             let path = documents_path
                 .join(LITT_DIRECTORY_NAME)
@@ -408,14 +401,14 @@ impl Index {
 
                 Ok(serde_json::from_str(&data).map_err(|e| CreationError(e.to_string()))?)
             } else {
-                Ok(Mutex::new(HashMap::new()))
+                Ok(HashMap::new())
             }
         } else {
             Err(StateError("Writing".to_string()))
         }
     }
 
-    fn store_checksum_map(&self, checksum_map: &HashMap<String, (u64, SystemTime)>) -> Result<()> {
+    fn store_checksum_map(&self, checksum_map: HashMap<String, (u64, SystemTime)>) -> Result<()> {
         if let Index::Writing { documents_path, .. } = self {
             let path = documents_path
                 .join(LITT_DIRECTORY_NAME)
@@ -430,40 +423,24 @@ impl Index {
         }
     }
 
-    fn update_checksum(
-        &self,
-        path: &str,
-        checksum_map: &Arc<Mutex<HashMap<String, (u64, SystemTime)>>>,
-    ) -> Result<()> {
-        let file = std::fs::File::open(path).map_err(|e| CreationError(e.to_string()))?;
+    fn calculate_checksum(path: &str) -> Result<(String, (u64, SystemTime))> {
+        let file = File::open(path).map_err(|e| CreationError(e.to_string()))?;
         let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
         let modified = metadata
             .modified()
             .map_err(|e| CreationError(e.to_string()))?;
 
-        checksum_map
-            .lock()
-            .map_err(|e| CreationError(e.to_string()))?
-            .insert(path.to_string(), (metadata.len(), modified));
-        Ok(())
+        let result = (path.to_string(), (metadata.len(), modified));
+        Ok(result)
     }
 
-    fn compare_checksum(
-        &self,
-        path: &str,
-        checksum_map: &Mutex<HashMap<String, (u64, SystemTime)>>,
-    ) -> Result<bool> {
-        let file = std::fs::File::open(path).map_err(|e| CreationError(e.to_string()))?;
-        let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
-        let modified = metadata
-            .modified()
-            .map_err(|e| CreationError(e.to_string()))?;
-
-        if let Some((len, last_modified)) = checksum_map
-            .lock()
-            .map_err(|e| CreationError(e.to_string()))?
-            .get(path)
-        {
+    fn checksum_is_equal(path: &str, checksum: Option<&(u64, SystemTime)>) -> Result<bool> {
+        if let Some((len, last_modified)) = checksum {
+            let file = File::open(path).map_err(|e| CreationError(e.to_string()))?;
+            let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
+            let modified = metadata
+                .modified()
+                .map_err(|e| CreationError(e.to_string()))?;
             Ok(*len == metadata.len() && *last_modified == modified)
         } else {
             Ok(false)
