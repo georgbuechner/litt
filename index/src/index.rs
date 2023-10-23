@@ -91,14 +91,14 @@ impl Index {
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
     pub fn add_all_documents(mut self) -> Result<Self> {
-        let checksum_map = self.open_or_create_checksum_map()?;
+        let checksum_map = self.open_checksum_map().ok();
         let dir_entries = self.collect_document_files();
 
         let new_checksum_map_result: Result<HashMap<_, _>> = dir_entries
             .par_iter()
             .map(|path| {
                 let key = path.path().to_string_lossy().to_string();
-                let existing_checksum = checksum_map.get(&key);
+                let existing_checksum = checksum_map.as_ref().and_then(|map| map.get(&key));
                 self.process_file(path, existing_checksum)
             })
             .collect();
@@ -390,19 +390,13 @@ impl Index {
         }
     }
 
-    fn open_or_create_checksum_map(&self) -> Result<HashMap<String, (u64, SystemTime)>> {
+    fn open_checksum_map(&self) -> Result<HashMap<String, (u64, SystemTime)>> {
         if let Index::Writing { documents_path, .. } = self {
             let path = documents_path
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
-            if Path::new(&path).exists() {
-                let data =
-                    std::fs::read_to_string(path).map_err(|e| CreationError(e.to_string()))?;
-
-                Ok(serde_json::from_str(&data).map_err(|e| CreationError(e.to_string()))?)
-            } else {
-                Ok(HashMap::new())
-            }
+            let data = std::fs::read_to_string(path).map_err(|e| CreationError(e.to_string()))?;
+            Ok(serde_json::from_str(&data).map_err(|e| CreationError(e.to_string()))?)
         } else {
             Err(StateError("Writing".to_string()))
         }
