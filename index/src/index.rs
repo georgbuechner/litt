@@ -174,14 +174,15 @@ impl Index {
             if !Self::checksum_is_equal(&str_path, existing_checksum).unwrap_or(false) {
                 println!("Adding document: {}", relative_path.to_string_lossy());
                 self.add_document(path)?;
-                return Self::calculate_checksum(&str_path);
+                Self::calculate_checksum(&str_path)
             } else {
                 println!(
                     "Skipped (already exists): {}",
                     relative_path.to_string_lossy()
                 );
+                // can unwrap because this arm is only entered when existing checksum is not None
+                Ok((str_path, *(existing_checksum.unwrap())))
             }
-            Ok((str_path.to_string(), *(existing_checksum.unwrap())))
         } else {
             Err(StateError("Writing".to_string()))
         }
