@@ -14,3 +14,4 @@ litt_search = { path = "../search" }
 litt_shared = { path = "../shared" }
 litt_index = { path = "../index" }
 open = { workspace = true }
+tokio = { workspace = true }

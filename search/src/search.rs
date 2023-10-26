@@ -189,6 +189,7 @@ impl Search {
 #[cfg(test)]
 mod tests {
     use std::panic;
+    use std::panic::AssertUnwindSafe;
 
     use litt_shared::test_helpers::cleanup_litt_files;
 
@@ -199,12 +200,15 @@ mod tests {
     fn teardown() {
         cleanup_litt_files(TEST_DIR_NAME)
     }
-
     fn run_test<T>(test: T)
-    where
-        T: FnOnce() + panic::UnwindSafe,
+        where
+            T: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + panic::UnwindSafe,
     {
-        let result = panic::catch_unwind(test);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            runtime.block_on(test())
+        }));
 
         teardown();
 
@@ -226,12 +230,12 @@ mod tests {
 
     #[test]
     fn test_search() {
-        run_test(|| {
-            let search = create_searcher().unwrap();
+        run_test(|| Box::pin(async {
+            let search = create_searcher().await;
             test_normal_search(&search);
             test_fuzzy_search(&search);
             test_limit_and_offset(&search);
-        })
+        }))
     }
 
     fn test_normal_search(search: &Search) {

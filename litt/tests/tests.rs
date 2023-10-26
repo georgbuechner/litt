@@ -1,4 +1,5 @@
 use std::panic;
+use std::panic::AssertUnwindSafe;
 
 extern crate litt_search;
 use litt_index::index::Index;
@@ -11,11 +12,13 @@ const TEST_FILE_NAME: &str = "test.pdf";
 
 #[test]
 fn test_index_and_search() {
-    run_test(|| {
+    run_test(|| Box::pin(async {
         let search_schema = SearchSchema::default();
 
         let writeable_index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
         let readable_index = writeable_index.add_all_documents().unwrap();
+        let mut index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
+        index.add_all_documents().await.unwrap();
 
         // # Searching
 
@@ -45,7 +48,7 @@ fn test_index_and_search() {
 
         assert!(results.contains_key(TEST_FILE_NAME));
         assert_eq!(results.get(TEST_FILE_NAME).unwrap().len(), 1);
-    });
+    }))
 }
 
 fn teardown() {
@@ -53,10 +56,14 @@ fn teardown() {
 }
 
 fn run_test<T>(test: T)
-where
-    T: FnOnce() + panic::UnwindSafe,
+    where
+        T: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + panic::UnwindSafe,
 {
-    let result = panic::catch_unwind(test);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        runtime.block_on(test())
+    }));
 
     teardown();
 

@@ -94,8 +94,8 @@ fn open_std_programm(path: String) -> Result<(), LittError> {
 
     Ok(())
 }
-
-fn main() -> Result<(), LittError> {
+#[tokio::main]
+async fn main() -> Result<(), LittError> {
     let mut index_tracker = match IndexTracker::create(".litt".into()) {
         Ok(index_tracker) => index_tracker,
         Err(e) => return Err(LittError(e.to_string())),
@@ -179,7 +179,7 @@ fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError(e.to_string())),
         };
 
-        index = match index.add_all_documents() {
+        index = match index.add_all_documents().await {
             Ok(index_with_documents) => index_with_documents,
             Err(e) => return Err(LittError(e.to_string())),
         };
@@ -244,7 +244,7 @@ fn main() -> Result<(), LittError> {
         println!("Reloading index \"{}\".", index_name);
         let old_num_docs = searcher.num_docs();
         let start = Instant::now();
-        if let Err(e) = index.reload() {
+        if let Err(e) = index.reload().await {
             return Err(LittError(e.to_string()));
         }
         println!(

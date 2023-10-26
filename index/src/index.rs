@@ -5,13 +5,12 @@ use crate::LittIndexError::{
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
-use rayon::prelude::*;
 use std::collections::HashMap;
 use std::convert::AsRef;
 use std::fs::{create_dir_all, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use tokio::process::Command;
 use std::time::SystemTime;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
@@ -96,12 +95,12 @@ impl Index {
     }
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
-    pub fn add_all_documents(mut self) -> Result<Self> {
+    pub async fn add_all_documents(mut self) -> Result<Self> {
         let checksum_map = self.open_checksum_map().ok();
         let dir_entries = self.collect_document_files();
 
         let new_checksum_map_result: Result<HashMap<_, _>> = dir_entries
-            .par_iter()
+            .iter()
             .map(|path| {
                 let key = path.path().to_string_lossy().to_string();
                 let existing_checksum = checksum_map.as_ref().and_then(|map| map.get(&key));
@@ -173,7 +172,7 @@ impl Index {
             let str_path = path.path().to_string_lossy().to_string();
             if !Self::checksum_is_equal(&str_path, existing_checksum).unwrap_or(false) {
                 println!("Adding document: {}", relative_path.to_string_lossy());
-                self.add_document(path)?;
+                self.add_document(path).await?;
                 Self::calculate_checksum(&str_path)
             } else {
                 println!(
@@ -189,7 +188,7 @@ impl Index {
     }
 
     /// For now, just delete existing index and index the documents again.
-    pub fn reload(self) -> Result<Self> {
+    pub async fn reload(self) -> Result<Self> {
         if let Index::Reading {
             ref index,
             ref documents_path,
@@ -204,7 +203,7 @@ impl Index {
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
             _ = std::fs::remove_file(checksum_map);
-            self.add_all_documents()
+            self.add_all_documents().await?
         } else {
             Err(StateError("Reading".to_string()))
         }
@@ -267,7 +266,7 @@ impl Index {
     }
 
     /// Add a tantivy document to the index for each page of the document.
-    fn add_document(&self, dir_entry: &DirEntry) -> Result<()> {
+    async fn add_document(&self, dir_entry: &DirEntry) -> Result<()> {
         if let Index::Writing { documents_path, .. } = self {
             // Create custom directory to store all pages:
             let doc_id = Uuid::new_v4();
@@ -322,7 +321,7 @@ impl Index {
                 .arg(full_path.to_string_lossy().to_string())
                 .arg(page_path.to_string_lossy().to_string());
 
-            let pdf_to_text_output = pdf_to_text_call.output().map_err(|_| {
+            let pdf_to_text_output = pdf_to_text_call.output().await.map_err(|_| {
                 PdfParseError("Make sure pdftotext is set up correctly and installed (usually part of xpdf (Windows) or poppler (Linux/Mac))".into())
             })?;
             pdf_to_text_successful = pdf_to_text_output.status.success();
