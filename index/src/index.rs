@@ -1,28 +1,28 @@
+use std::collections::HashMap;
+use std::convert::AsRef;
+use std::fs::create_dir_all;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
+use tantivy::query::QueryParser;
+use tantivy::schema::{Document as TantivyDocument, Schema};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, copy};
+
+use tokio::process::Command;
+use tokio_stream::{self, iter, StreamExt};
+use uuid::Uuid;
+use walkdir::{DirEntry, WalkDir};
+
+use litt_shared::LITT_DIRECTORY_NAME;
+use litt_shared::search_schema::SearchSchema;
+
 use crate::LittIndexError::{
     CreationError, OpenError, PdfParseError, ReloadError, StateError, TxtParseError, UpdateError,
     WriteError,
 };
 use crate::Result;
-use litt_shared::search_schema::SearchSchema;
-use litt_shared::LITT_DIRECTORY_NAME;
-use std::collections::HashMap;
-use std::convert::AsRef;
-use std::fs::{create_dir_all};
-use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, copy};
-use std::sync::Arc;
-use std::path::{Path, PathBuf};
-use tokio::process::Command;
-use std::time::SystemTime;
-use futures::future::try_join_all;
-use tantivy::query::QueryParser;
-use tantivy::schema::{Document as TantivyDocument, Schema};
-use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
-use tokio::task;
-use tokio_stream::{self, StreamExt, iter};
-use tokio::io::{AsyncRead};
-use uuid::Uuid;
-use walkdir::{DirEntry, WalkDir};
 
 const INDEX_DIRECTORY_NAME: &str = "index";
 const PAGES_DIRECTORY_NAME: &str = "pages";
@@ -489,11 +489,14 @@ impl Index {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use litt_shared::test_helpers::cleanup_dir_and_file;
+    use std::panic;
+
     use once_cell::sync::Lazy;
     use serial_test::serial;
-    use std::panic;
+
+    use litt_shared::test_helpers::cleanup_dir_and_file;
+
+    use super::*;
 
     const TEST_DIR_NAME: &str = "resources";
     const TEST_FILE_PATH: &str = "test.pdf";
