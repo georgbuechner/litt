@@ -120,8 +120,8 @@ litt <index-name> <search-term>
 If your search term is more than one word, you should add quotations: `litt <index-name> '<term1 term2 ...>'`
 
 Use `--offset` and `--limit` to show more results. (Default shows the top ten
-results. `--offset 10` shows the first 10 to 20 results. `--limit 50 --offset 10`
-shows the first 10 to 50 results).
+results. `--offset 10` shows the first 10 to 20 results. `--offset 10 --limit 50`
+shows the first 10 to 60 results).
 
 ![offset-limit example](images/offset-limit_example.png)
 
