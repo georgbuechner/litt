@@ -16,7 +16,8 @@ litt <index-name> -i <path-to-documents>
 litt <index-name> <search-term>
 ```
 
-![Title Image](images/title-smaller.gif)
+https://github.com/georgbuechner/litt/assets/24663156/4e9b069d-8806-4a4f-9efb-02176910512f
+
 
 # Table of contents
 1. [litt](#litt)
