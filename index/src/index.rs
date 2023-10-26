@@ -7,14 +7,20 @@ use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
 use std::collections::HashMap;
 use std::convert::AsRef;
-use std::fs::{create_dir_all, File};
-use std::io::{self, Read};
+use std::fs::{create_dir_all};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, copy};
+use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use std::time::SystemTime;
+use futures::future::try_join_all;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
+use tokio::task;
+use tokio_stream::{self, StreamExt, iter};
+use tokio::io::{AsyncRead};
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 
@@ -99,16 +105,29 @@ impl Index {
         let checksum_map = self.open_checksum_map().ok();
         let dir_entries = self.collect_document_files();
 
-        let new_checksum_map_result: Result<HashMap<_, _>> = dir_entries
-            .iter()
-            .map(|path| {
-                let key = path.path().to_string_lossy().to_string();
-                let existing_checksum = checksum_map.as_ref().and_then(|map| map.get(&key));
-                self.process_file(path, existing_checksum)
-            })
+        // Convert dir_entries into a stream
+        let dir_entries_stream = iter(dir_entries);
+
+        // Map each entry to an async operation
+        let results_stream = dir_entries_stream.then(|path| {
+            let key = path.path().to_string_lossy().to_string();
+            let existing_checksum = checksum_map.as_ref().and_then(|map| map.get(&key));
+            let path_clone = path.path().to_path_buf(); // Clone the path
+            let self_ref = &self; // Create a reference to self
+            async move {
+                self_ref.process_file(&path_clone, existing_checksum).await
+            }
+        });
+
+        // Collect the results into a vector
+        let results: Vec<Result<(String, (u64, SystemTime))>> = results_stream.collect().await;
+
+        // Convert the vector of tuples into a HashMap
+        let new_checksum_map = results.into_iter()
+            .filter_map(|result| result.ok()) // Filter out only Ok values
             .collect();
 
-        let new_checksum_map = new_checksum_map_result?;
+        // Store the new checksum map
         self.store_checksum_map(new_checksum_map)?;
 
         // We need to call .commit() explicitly to force the
@@ -137,7 +156,7 @@ impl Index {
         }
     }
 
-    pub fn update(mut self) -> Result<Self> {
+    pub async fn update(mut self) -> Result<Self> {
         if let Index::Reading {
             index,
             documents_path,
@@ -152,28 +171,27 @@ impl Index {
                 documents_path,
                 writer,
             };
-            self.add_all_documents()
+            self.add_all_documents().await
         } else {
             Err(StateError("Reading".to_string()))
         }
     }
 
-    pub fn process_file(
+    pub async fn process_file(
         &self,
-        path: &DirEntry,
+        path: &Path,
         existing_checksum: Option<&(u64, SystemTime)>,
     ) -> Result<(String, (u64, SystemTime))> {
         if let Index::Writing { documents_path, .. } = &self {
             let relative_path = path
-                .path()
                 .strip_prefix(documents_path)
                 .map_err(|e| CreationError(e.to_string()))?;
 
-            let str_path = path.path().to_string_lossy().to_string();
-            if !Self::checksum_is_equal(&str_path, existing_checksum).unwrap_or(false) {
+            let str_path = path.to_string_lossy().to_string();
+            if !Self::checksum_is_equal(&str_path, existing_checksum).await.unwrap_or(false) {
                 println!("Adding document: {}", relative_path.to_string_lossy());
                 self.add_document(path).await?;
-                Self::calculate_checksum(&str_path)
+                Self::calculate_checksum(&str_path).await
             } else {
                 println!(
                     "Skipped (already exists): {}",
@@ -203,7 +221,7 @@ impl Index {
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
             _ = std::fs::remove_file(checksum_map);
-            self.add_all_documents().await?
+            self.add_all_documents().await
         } else {
             Err(StateError("Reading".to_string()))
         }
@@ -266,7 +284,7 @@ impl Index {
     }
 
     /// Add a tantivy document to the index for each page of the document.
-    async fn add_document(&self, dir_entry: &DirEntry) -> Result<()> {
+    async fn add_document(&self, dir_entry: &Path) -> Result<()> {
         if let Index::Writing { documents_path, .. } = self {
             // Create custom directory to store all pages:
             let doc_id = Uuid::new_v4();
@@ -275,17 +293,17 @@ impl Index {
                 .join(PAGES_DIRECTORY_NAME)
                 .join(doc_id.to_string());
             create_dir_all(&pages_path).map_err(|e| CreationError(e.to_string()))?;
-            let full_path = dir_entry.path();
+            let full_path = dir_entry;
 
             // Check filetype (pdf/ txt)
             let num = if full_path.to_string_lossy().ends_with("pdf") {
-                self.add_pdf_document(dir_entry, pages_path, full_path)?
+                self.add_pdf_document(dir_entry, pages_path, full_path).await?
             } else {
-                self.add_txt_document(dir_entry, pages_path, full_path)?
+                self.add_txt_document(dir_entry, pages_path, full_path).await?
             };
             println!(
                 "{} loaded {} page{} at {}",
-                dir_entry.path().to_string_lossy(),
+                dir_entry.to_string_lossy(),
                 num,
                 if num != 1 { "s" } else { "" },
                 full_path.to_string_lossy()
@@ -296,9 +314,9 @@ impl Index {
         }
     }
 
-    fn add_pdf_document(
+    async fn add_pdf_document(
         &self,
-        dir_entry: &DirEntry,
+        dir_entry: &Path,
         pages_path: PathBuf,
         full_path: &Path,
     ) -> Result<u64> {
@@ -328,37 +346,58 @@ impl Index {
 
             if pdf_to_text_successful {
                 // read page-body from generated .txt file
-                let page_body = std::fs::read_to_string(&page_path)
+                let mut file = File::open(&page_path)
+                    .await
+                    .map_err(|e| TxtParseError(e.to_string()))?;
+                let mut body = String::new();
+                file.read_to_string(&mut body).await
                     .map_err(|e| PdfParseError(e.to_string()))?;
-                self.add_page(dir_entry.path(), page_number, &page_path, &page_body)?;
+                self.add_page(dir_entry, page_number, &page_path, &body)?;
             }
         }
 
         Ok(page_number)
     }
 
-    fn add_txt_document(
+    async fn add_txt_document(
         &self,
-        dir_entry: &DirEntry,
+        dir_entry: &Path,
         pages_path: PathBuf,
         full_path: &Path,
     ) -> Result<u64> {
         let page_number = 1;
         let mut page_path = pages_path.join(page_number.to_string());
         page_path.set_extension("txt");
-        // Open the file in read-only mode
-        let mut file = File::open(full_path).map_err(|e| TxtParseError(e.to_string()))?;
-        // Store as page seperatly
-        let mut destination_file =
-            File::create(page_path.clone()).map_err(|e| TxtParseError(e.to_string()))?;
-        io::copy(&mut file, &mut destination_file).map_err(|e| TxtParseError(e.to_string()))?;
-        // Read the contents of the file into a string
-        let mut file = File::open(full_path).map_err(|e| TxtParseError(e.to_string()))?;
+
+        // Open the file in read-only mode asynchronously
+        let mut file = File::open(full_path)
+            .await
+            .map_err(|e| TxtParseError(e.to_string()))?;
+
+        // Create the destination file asynchronously
+        let mut destination_file = File::create(&page_path)
+            .await
+            .map_err(|e| TxtParseError(e.to_string()))?;
+
+        // Copy the contents asynchronously
+        copy(&mut file, &mut destination_file)
+            .await
+            .map_err(|e| TxtParseError(e.to_string()))?;
+
+        // Re-open the file for reading asynchronously
+        let mut file = File::open(full_path)
+            .await
+            .map_err(|e| TxtParseError(e.to_string()))?;
+
+        // Read the contents of the file into a string asynchronously
         let mut body = String::new();
         file.read_to_string(&mut body)
+            .await
             .map_err(|e| TxtParseError(e.to_string() + full_path.to_string_lossy().as_ref()))?;
+
         // Finally, add page
-        self.add_page(dir_entry.path(), page_number, &page_path, &body)?;
+        self.add_page(dir_entry, page_number, &page_path, &body)?;
+
         Ok(page_number)
     }
 
@@ -423,9 +462,9 @@ impl Index {
         }
     }
 
-    fn calculate_checksum(path: &str) -> Result<(String, (u64, SystemTime))> {
-        let file = File::open(path).map_err(|e| CreationError(e.to_string()))?;
-        let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
+    async fn calculate_checksum(path: &str) -> Result<(String, (u64, SystemTime))> {
+        let file = File::open(path).await.map_err(|e| CreationError(e.to_string()))?;
+        let metadata = file.metadata().await.map_err(|e| CreationError(e.to_string()))?;
         let modified = metadata
             .modified()
             .map_err(|e| CreationError(e.to_string()))?;
@@ -434,10 +473,10 @@ impl Index {
         Ok(result)
     }
 
-    fn checksum_is_equal(path: &str, checksum: Option<&(u64, SystemTime)>) -> Result<bool> {
+    async fn checksum_is_equal(path: &str, checksum: Option<&(u64, SystemTime)>) -> Result<bool> {
         if let Some((len, last_modified)) = checksum {
-            let file = File::open(path).map_err(|e| CreationError(e.to_string()))?;
-            let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
+            let file = File::open(path).await.map_err(|e| CreationError(e.to_string()))?;
+            let metadata = file.metadata().await.map_err(|e| CreationError(e.to_string()))?;
             let modified = metadata
                 .modified()
                 .map_err(|e| CreationError(e.to_string()))?;
