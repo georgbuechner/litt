@@ -7,6 +7,7 @@ use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
 use tokio::fs::create_dir_all;
+use tokio::fs;
 use tokio::fs::File;
 use tokio::io::{copy, AsyncReadExt};
 use tokio::process::Command;
@@ -105,7 +106,7 @@ impl Index {
 
     /// Add all PDF documents in located in the path this index was created for (see [create()](Self::create)).
     pub async fn add_all_documents(mut self) -> Result<Self> {
-        let checksum_map = self.open_checksum_map().ok();
+        let checksum_map = self.open_checksum_map().await.ok();
         let dir_entries = self.collect_document_files();
 
         // Convert dir_entries into a stream
@@ -130,7 +131,7 @@ impl Index {
             .collect();
 
         // Store the new checksum map
-        self.store_checksum_map(new_checksum_map)?;
+        self.store_checksum_map(new_checksum_map).await?;
 
         // We need to call .commit() explicitly to force the
         // index_writer to finish processing the documents in the queue,
@@ -225,7 +226,7 @@ impl Index {
             let checksum_map = PathBuf::from(documents_path)
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
-            _ = std::fs::remove_file(checksum_map);
+            _ = fs::remove_file(checksum_map).await;
             self.add_all_documents().await
         } else {
             Err(StateError("Reading".to_string()))
@@ -445,28 +446,28 @@ impl Index {
         }
     }
 
-    fn open_checksum_map(&self) -> Result<HashMap<String, (u64, SystemTime)>> {
+    async fn open_checksum_map(&self) -> Result<HashMap<String, (u64, SystemTime)>> {
         if let Index::Writing { documents_path, .. } = self {
             let path = documents_path
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
-            let data = std::fs::read_to_string(path).map_err(|e| CreationError(e.to_string()))?;
+            let data = fs::read_to_string(path).await.map_err(|e| CreationError(e.to_string()))?;
             Ok(serde_json::from_str(&data).map_err(|e| CreationError(e.to_string()))?)
         } else {
             Err(StateError("Writing".to_string()))
         }
     }
 
-    fn store_checksum_map(&self, checksum_map: HashMap<String, (u64, SystemTime)>) -> Result<()> {
+    async fn store_checksum_map(&self, checksum_map: HashMap<String, (u64, SystemTime)>) -> Result<()> {
         if let Index::Writing { documents_path, .. } = self {
             let path = documents_path
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
-            std::fs::write(
+            fs::write(
                 path,
                 serde_json::to_string(&checksum_map).map_err(|e| CreationError(e.to_string()))?,
             )
-            .map_err(|e| CreationError(e.to_string()))
+                .await.map_err(|e| CreationError(e.to_string()))
         } else {
             Err(StateError("Writing".to_string()))
         }
