@@ -217,15 +217,19 @@ awesome libraries makeing `litt` possible:
   your documents
 - [pdftotext](https://www.xpdfreader.com/pdftotext-man.html) which is amazingly
   good at doing its job)
+- [rayon](https://github.com/rayon-rs/rayon) for parallelizing indexing and
+  making it ~10 times faster!
+
 
 We also want to clarify, that not all dependencies use the same license as we do:
 
 | name | license |
 |------|---------|
-| tantivy | MIT |
 | clap | Apache-2.0, MIT |
+| rayon | Apache-2.0, MIT |
 | serde json | Apache-2.0, MIT |
 | shellexpand | Apache-2.0, MIT |
 | uuid | Apache-2.0, MIT |
-| colored | MPL-2.0 license |
+| tantivy | MIT |
 | walkdir | MIT |
+| colored | MPL-2.0 |
