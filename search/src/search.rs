@@ -51,15 +51,26 @@ impl Search {
         offset: usize,
         limit: usize,
     ) -> Result<HashMap<String, LinkedList<SearchResult>>> {
-        let searcher = self.index.searcher();
+        let searcher = self
+            .index
+            .searcher()
+            .map_err(|e| SearchError(e.to_string()))?;
 
         let (query_parser, term) = match input {
             SearchTerm::Fuzzy(term, distance) => {
-                let mut query_parser = self.index.query_parser();
+                let mut query_parser = self
+                    .index
+                    .query_parser()
+                    .map_err(|e| SearchError(e.to_string()))?;
                 query_parser.set_field_fuzzy(self.schema.body, true, *distance, true);
                 (query_parser, term)
             }
-            SearchTerm::Exact(term) => (self.index.query_parser(), term),
+            SearchTerm::Exact(term) => (
+                self.index
+                    .query_parser()
+                    .map_err(|e| SearchError(e.to_string()))?,
+                term,
+            ),
         };
 
         let query = query_parser
@@ -118,12 +129,16 @@ impl Search {
         search_term: &SearchTerm,
     ) -> Result<String> {
         // Prepare creating snippet.
-        let searcher = self.index.searcher();
+        let searcher = self
+            .index
+            .searcher()
+            .map_err(|e| SearchError(e.to_string()))?;
         let (query_parser, term) = match search_term {
             SearchTerm::Fuzzy(_, _) => return Ok("[fuzzy match] No preview. We're sry.".into()),
             SearchTerm::Exact(term) => (self.index.query_parser(), term),
         };
         let query = query_parser
+            .map_err(|e| SearchError(e.to_string()))?
             .parse_query(term)
             .map_err(|e| SearchError(e.to_string()))?;
         let mut snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
@@ -174,6 +189,7 @@ impl Search {
 #[cfg(test)]
 mod tests {
     use std::panic;
+    use std::panic::AssertUnwindSafe;
 
     use litt_shared::test_helpers::cleanup_litt_files;
 
@@ -184,33 +200,44 @@ mod tests {
     fn teardown() {
         cleanup_litt_files(TEST_DIR_NAME)
     }
-
     fn run_test<T>(test: T)
     where
-        T: FnOnce() + panic::UnwindSafe,
+        T: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + panic::UnwindSafe,
     {
-        let result = panic::catch_unwind(test);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let result = panic::catch_unwind(AssertUnwindSafe(|| runtime.block_on(test())));
 
         teardown();
 
         assert!(result.is_ok())
     }
 
-    fn create_searcher() -> Search {
+    async fn create_searcher() -> Result<Search> {
         let search_schema = SearchSchema::default();
-        let mut index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
-        index.add_all_documents().unwrap();
-        println!("loaded {} document pages.", &index.searcher().num_docs());
-        Search::new(index, search_schema)
+        let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone())
+            .await
+            .unwrap();
+        let readable_index = index
+            .add_all_documents()
+            .await
+            .map_err(|e| SearchError(e.to_string()))?;
+        let searcher = readable_index
+            .searcher()
+            .map_err(|e| SearchError(e.to_string()))?;
+        println!("loaded {} document pages.", searcher.num_docs());
+        Ok(Search::new(readable_index, search_schema))
     }
 
     #[test]
     fn test_search() {
         run_test(|| {
-            let search = create_searcher();
-            test_normal_search(&search);
-            test_fuzzy_search(&search);
-            test_limit_and_offset(&search);
+            Box::pin(async {
+                let search = create_searcher().await.unwrap();
+                test_normal_search(&search);
+                test_fuzzy_search(&search);
+                test_limit_and_offset(&search);
+            })
         })
     }
 

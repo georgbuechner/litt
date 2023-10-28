@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::fmt::Formatter;
-use std::fs;
 use std::path::Path;
 use std::time::Instant;
+use tokio::fs;
 
 use clap::CommandFactory;
 use clap::Parser;
@@ -66,12 +66,12 @@ fn open_pdf(path: String, page: u32, term: String) -> Result<(), LittError> {
 Using standard system PDF viewer... {}",
             path
         );
-        open_std_programm(path)?;
+        open_standard_system_file_viewer(path)?;
     }
     Ok(())
 }
 
-fn open_std_programm(path: String) -> Result<(), LittError> {
+fn open_standard_system_file_viewer(path: String) -> Result<(), LittError> {
     #[cfg(target_os = "macos")]
     std::process::Command::new("open")
         .arg(&path)
@@ -94,8 +94,8 @@ fn open_std_programm(path: String) -> Result<(), LittError> {
 
     Ok(())
 }
-
-fn main() -> Result<(), LittError> {
+#[tokio::main]
+async fn main() -> Result<(), LittError> {
     let mut index_tracker = match IndexTracker::create(".litt".into()) {
         Ok(index_tracker) => index_tracker,
         Err(e) => return Err(LittError(e.to_string())),
@@ -116,7 +116,7 @@ fn main() -> Result<(), LittError> {
             if path.0.ends_with("pdf") {
                 open_pdf(path.0.clone(), path.1, path.2.clone())?;
             } else {
-                open_std_programm(path.0.clone())?;
+                open_standard_system_file_viewer(path.0.clone())?;
             }
             return Ok(());
         }
@@ -174,17 +174,20 @@ fn main() -> Result<(), LittError> {
             return Err(LittError(e.to_string()));
         }
 
-        let mut index = match Index::create(&path, SearchSchema::default()) {
+        let mut index = match Index::create(&path, SearchSchema::default()).await {
             Ok(index) => index,
             Err(e) => return Err(LittError(e.to_string())),
         };
 
-        if let Err(e) = index.add_all_documents() {
-            return Err(LittError(e.to_string()));
-        }
+        index = match index.add_all_documents().await {
+            Ok(index_with_documents) => index_with_documents,
+            Err(e) => return Err(LittError(e.to_string())),
+        };
+
+        let searcher = index.searcher().map_err(|e| LittError(e.to_string()))?;
         println!(
             "Successfully indexed {} document pages in {:?}",
-            index.searcher().num_docs(),
+            searcher.num_docs(),
             start.elapsed()
         );
         return Ok(());
@@ -197,7 +200,9 @@ fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError(e.to_string())),
         };
         let index_path = path.join(LITT_DIRECTORY_NAME);
-        fs::remove_dir_all(index_path).expect("Could not remove index-file");
+        if let Err(e) = fs::remove_dir_all(index_path).await {
+            return Err(LittError(e.to_string()));
+        }
         // remove litt-index from tracker.
         if let Err(e) = index_tracker.remove(index_name.clone()) {
             return Err(LittError(e.to_string()));
@@ -210,46 +215,51 @@ fn main() -> Result<(), LittError> {
     let index_path = index_tracker
         .get_path(&index_name)
         .map_err(|e| LittError(e.to_string()))?;
-    let mut index = match Index::open_or_create(index_path.clone(), SearchSchema::default()) {
+    let index = match Index::open(index_path.clone(), SearchSchema::default()) {
         Ok(index) => index,
         Err(e) => return Err(LittError(e.to_string())),
     };
+    let searcher = index.searcher().map_err(|e| LittError(e.to_string()))?;
 
     // update existing index
     if cli.update {
         println!("Updating index \"{}\".", index_name);
-        let old_num_docs = index.searcher().num_docs();
+        let old_num_docs = searcher.num_docs();
         let start = Instant::now();
-        if let Err(e) = index.add_all_documents() {
-            return Err(LittError(e.to_string()));
-        }
-        println!(
-            "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
-            index.searcher().num_docs()-old_num_docs,
-            start.elapsed(),
-            index.searcher().num_docs(),
-        );
-        return Ok(());
+        return match index.update().await {
+            Ok(_) => {
+                println!(
+                    "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
+                    searcher
+                        .num_docs()-old_num_docs,
+                    start.elapsed(),
+                    searcher
+                        .num_docs(),
+                );
+                Ok(())
+            }
+            Err(e) => Err(LittError(e.to_string())),
+        };
     }
     // reload existing index
     if cli.reload {
         println!("Reloading index \"{}\".", index_name);
-        let old_num_docs = index.searcher().num_docs();
+        let old_num_docs = searcher.num_docs();
         let start = Instant::now();
-        if let Err(e) = index.reload() {
+        if let Err(e) = index.reload().await {
             return Err(LittError(e.to_string()));
         }
         println!(
             "Reload done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
-            index.searcher().num_docs()-old_num_docs,
+            searcher.num_docs()-old_num_docs,
             start.elapsed(),
-            index.searcher().num_docs(),
+            searcher.num_docs(),
         );
         return Ok(());
     }
     // do normal search
     else if !cli.term.is_empty() {
-        let num_docs = &index.searcher().num_docs();
+        let num_docs = searcher.num_docs();
         println!(
             "Search index \"{}\" ({}) for {}",
             index_name,

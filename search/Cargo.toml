@@ -10,4 +10,5 @@ crate-type = ["lib"]
 tantivy = { workspace = true }
 litt_shared = { path = "../shared" }
 litt_index = { path = "../index" }
+tokio = { workspace = true }
 
