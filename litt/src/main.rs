@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::fmt::Formatter;
-use std::fs;
+use tokio::fs;
 use std::path::Path;
 use std::time::Instant;
 
@@ -66,12 +66,12 @@ fn open_pdf(path: String, page: u32, term: String) -> Result<(), LittError> {
 Using standard system PDF viewer... {}",
             path
         );
-        open_std_programm(path)?;
+        open_standard_system_file_viewer(path)?;
     }
     Ok(())
 }
 
-fn open_std_programm(path: String) -> Result<(), LittError> {
+fn open_standard_system_file_viewer(path: String) -> Result<(), LittError> {
     #[cfg(target_os = "macos")]
     std::process::Command::new("open")
         .arg(&path)
@@ -116,7 +116,7 @@ async fn main() -> Result<(), LittError> {
             if path.0.ends_with("pdf") {
                 open_pdf(path.0.clone(), path.1, path.2.clone())?;
             } else {
-                open_std_programm(path.0.clone())?;
+                open_standard_system_file_viewer(path.0.clone())?;
             }
             return Ok(());
         }
@@ -174,7 +174,7 @@ async fn main() -> Result<(), LittError> {
             return Err(LittError(e.to_string()));
         }
 
-        let mut index = match Index::create(&path, SearchSchema::default()) {
+        let mut index = match Index::create(&path, SearchSchema::default()).await {
             Ok(index) => index,
             Err(e) => return Err(LittError(e.to_string())),
         };
@@ -200,7 +200,9 @@ async fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError(e.to_string())),
         };
         let index_path = path.join(LITT_DIRECTORY_NAME);
-        fs::remove_dir_all(index_path).expect("Could not remove index-file");
+        if let Err(e) = fs::remove_dir_all(index_path).await {
+            return Err(LittError(e.to_string()));
+        }
         // remove litt-index from tracker.
         if let Err(e) = index_tracker.remove(index_name.clone()) {
             return Err(LittError(e.to_string()));
@@ -224,7 +226,7 @@ async fn main() -> Result<(), LittError> {
         println!("Updating index \"{}\".", index_name);
         let old_num_docs = searcher.num_docs();
         let start = Instant::now();
-        return match index.update() {
+        return match index.update().await {
             Ok(_) => {
                 println!(
                     "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
