@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 use std::convert::AsRef;
-use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
+use tokio::fs::create_dir_all;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, copy};
-
 use tokio::process::Command;
 use tokio_stream::{self, iter, StreamExt};
 use uuid::Uuid;
@@ -47,12 +46,12 @@ pub enum Index {
 }
 
 impl Index {
-    pub fn create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
+    pub async fn create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
             .join(INDEX_DIRECTORY_NAME);
-        create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
+        create_dir_all(&index_path).await.map_err(|e| CreationError(e.to_string()))?;
         let index = Self::create_index(&index_path, schema.schema.clone())?;
         let writer = Self::build_writer(&index)?;
         Ok(Self::Writing {
@@ -78,13 +77,13 @@ impl Index {
         })
     }
 
-    pub fn open_or_create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
+    pub async fn open_or_create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
         // TODO make search schema parameter optional and load schema from existing index
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
             .join(INDEX_DIRECTORY_NAME);
-        create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
+        create_dir_all(&index_path).await.map_err(|e| CreationError(e.to_string()))?;
         let index_create_result = Self::create_index(&index_path, schema.schema.clone());
         match index_create_result {
             Ok(index) => {
@@ -292,7 +291,7 @@ impl Index {
                 .join(LITT_DIRECTORY_NAME)
                 .join(PAGES_DIRECTORY_NAME)
                 .join(doc_id.to_string());
-            create_dir_all(&pages_path).map_err(|e| CreationError(e.to_string()))?;
+            create_dir_all(&pages_path).await.map_err(|e| CreationError(e.to_string()))?;
             let full_path = dir_entry;
 
             // Check filetype (pdf/ txt)
