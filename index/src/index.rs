@@ -6,8 +6,8 @@ use std::time::SystemTime;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
-use tokio::fs::create_dir_all;
 use tokio::fs;
+use tokio::fs::create_dir_all;
 use tokio::fs::File;
 use tokio::io::{copy, AsyncReadExt};
 use tokio::process::Command;
@@ -458,14 +458,19 @@ impl Index {
             let path = documents_path
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
-            let data = fs::read_to_string(path).await.map_err(|e| CreationError(e.to_string()))?;
+            let data = fs::read_to_string(path)
+                .await
+                .map_err(|e| CreationError(e.to_string()))?;
             Ok(serde_json::from_str(&data).map_err(|e| CreationError(e.to_string()))?)
         } else {
             Err(StateError("Writing".to_string()))
         }
     }
 
-    async fn store_checksum_map(&self, checksum_map: HashMap<String, (u64, SystemTime)>) -> Result<()> {
+    async fn store_checksum_map(
+        &self,
+        checksum_map: HashMap<String, (u64, SystemTime)>,
+    ) -> Result<()> {
         if let Index::Writing { documents_path, .. } = self {
             let path = documents_path
                 .join(LITT_DIRECTORY_NAME)
@@ -474,7 +479,8 @@ impl Index {
                 path,
                 serde_json::to_string(&checksum_map).map_err(|e| CreationError(e.to_string()))?,
             )
-                .await.map_err(|e| CreationError(e.to_string()))
+            .await
+            .map_err(|e| CreationError(e.to_string()))
         } else {
             Err(StateError("Writing".to_string()))
         }
