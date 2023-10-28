@@ -489,6 +489,7 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use std::panic;
+    use std::panic::AssertUnwindSafe;
 
     use once_cell::sync::Lazy;
     use serial_test::serial;
@@ -507,10 +508,14 @@ mod tests {
     }
 
     fn run_test<T>(test: T)
-    where
-        T: FnOnce() + panic::UnwindSafe,
+        where
+            T: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + panic::UnwindSafe,
     {
-        let result = panic::catch_unwind(test);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            runtime.block_on(test())
+        }));
 
         teardown();
 
@@ -520,8 +525,8 @@ mod tests {
     #[test]
     #[serial]
     fn test_create() {
-        run_test(|| {
-            let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+        run_test(|| Box::pin(async {
+            let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).await.unwrap();
             let (index_schema, index_path) = match index {
                 Index::Writing {
                     schema,
@@ -532,16 +537,16 @@ mod tests {
             };
             assert_eq!(SEARCH_SCHEMA.clone().schema, index_schema.schema);
             assert_eq!(PathBuf::from(TEST_DIR_NAME), index_path);
-        });
+        }))
     }
 
     #[test]
     #[serial]
     fn test_open_or_create() {
-        run_test(|| {
-            Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+        run_test(|| Box::pin(async {
+            Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).await.unwrap();
 
-            let opened_index = Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            let opened_index = Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).await.unwrap();
 
             let (index_schema, index_path) = match opened_index {
                 Index::Reading {
@@ -558,6 +563,6 @@ mod tests {
                 .join(LITT_DIRECTORY_NAME)
                 .join(INDEX_DIRECTORY_NAME)
                 .is_dir())
-        });
+        }))
     }
 }

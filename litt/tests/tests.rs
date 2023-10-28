@@ -15,9 +15,9 @@ fn test_index_and_search() {
     run_test(|| Box::pin(async {
         let search_schema = SearchSchema::default();
 
-        let writeable_index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
-        let readable_index = writeable_index.add_all_documents().unwrap();
-        let mut index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
+        let writeable_index = Index::create(TEST_DIR_NAME, search_schema.clone()).await.unwrap();
+        let readable_index = writeable_index.add_all_documents().await.unwrap();
+        let index = Index::create(TEST_DIR_NAME, search_schema.clone()).await.unwrap();
         index.add_all_documents().await.unwrap();
 
         // # Searching
