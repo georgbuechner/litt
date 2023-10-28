@@ -77,6 +77,22 @@ Honestly, I don't really know. After downloading the file `litt` should be added
 to path. This guide gives some explanation on how to do that: 
 https://windowsloop.com/how-to-add-to-windows-path/
 
+### Compile from source 
+First you should install `Rust`/`Cargo`: https://www.rust-lang.org/tools/install 
+
+Then clone the Github repository (in Windows we suggest using git-bash)
+```
+git clone https://github.com/georgbuechner/litt.git
+```
+
+Then run: 
+```
+cargo build --release 
+```
+
+Finally, make the release availible system-wide. 
+In Linux f.e.: `cp -f target/release/litt /usr/local/bin`. 
+
 ## Usage 
 
 ![basic functionality](images/basic_functionality.png)
