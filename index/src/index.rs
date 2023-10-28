@@ -214,20 +214,27 @@ impl Index {
     /// For now, just delete existing index and index the documents again.
     pub async fn reload(self) -> Result<Self> {
         if let Index::Reading {
-            ref index,
-            ref documents_path,
+            index,
+            documents_path,
+            schema,
             ..
         } = self
         {
-            let writer = Self::build_writer(index)?;
+            let writer = Self::build_writer(&index)?;
             writer
                 .delete_all_documents()
                 .map_err(|e| UpdateError(e.to_string()))?;
-            let checksum_map = PathBuf::from(documents_path)
+            let checksum_map = PathBuf::from(&documents_path)
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
             _ = fs::remove_file(checksum_map).await;
-            self.add_all_documents().await
+            let new_index = Self::Writing {
+                index,
+                schema,
+                documents_path,
+                writer,
+            };
+            new_index.add_all_documents().await
         } else {
             Err(StateError("Reading".to_string()))
         }
