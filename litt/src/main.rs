@@ -88,7 +88,7 @@ fn open_standard_system_file_viewer(path: String) -> Result<(), LittError> {
     std::process::Command::new("cmd")
         .arg("/c")
         .arg("start")
-        .arg(&path.0)
+        .arg(&path)
         .spawn()
         .map_err(|e| LittError(e.to_string()))?;
 
