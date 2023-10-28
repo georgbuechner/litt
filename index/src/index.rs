@@ -3,19 +3,19 @@ use std::convert::AsRef;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
 use tantivy::query::QueryParser;
 use tantivy::schema::{Document as TantivyDocument, Schema};
+use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
 use tokio::fs::create_dir_all;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, copy};
+use tokio::io::{copy, AsyncReadExt};
 use tokio::process::Command;
 use tokio_stream::{self, iter, StreamExt};
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 
-use litt_shared::LITT_DIRECTORY_NAME;
 use litt_shared::search_schema::SearchSchema;
+use litt_shared::LITT_DIRECTORY_NAME;
 
 use crate::LittIndexError::{
     CreationError, OpenError, PdfParseError, ReloadError, StateError, TxtParseError, UpdateError,
@@ -51,7 +51,9 @@ impl Index {
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
             .join(INDEX_DIRECTORY_NAME);
-        create_dir_all(&index_path).await.map_err(|e| CreationError(e.to_string()))?;
+        create_dir_all(&index_path)
+            .await
+            .map_err(|e| CreationError(e.to_string()))?;
         let index = Self::create_index(&index_path, schema.schema.clone())?;
         let writer = Self::build_writer(&index)?;
         Ok(Self::Writing {
@@ -83,7 +85,9 @@ impl Index {
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
             .join(INDEX_DIRECTORY_NAME);
-        create_dir_all(&index_path).await.map_err(|e| CreationError(e.to_string()))?;
+        create_dir_all(&index_path)
+            .await
+            .map_err(|e| CreationError(e.to_string()))?;
         let index_create_result = Self::create_index(&index_path, schema.schema.clone());
         match index_create_result {
             Ok(index) => {
@@ -113,16 +117,15 @@ impl Index {
             let existing_checksum = checksum_map.as_ref().and_then(|map| map.get(&key));
             let path_clone = path.path().to_path_buf(); // Clone the path
             let self_ref = &self; // Create a reference to self
-            async move {
-                self_ref.process_file(&path_clone, existing_checksum).await
-            }
+            async move { self_ref.process_file(&path_clone, existing_checksum).await }
         });
 
         // Collect the results into a vector
         let results: Vec<Result<(String, (u64, SystemTime))>> = results_stream.collect().await;
 
         // Convert the vector of tuples into a HashMap
-        let new_checksum_map = results.into_iter()
+        let new_checksum_map = results
+            .into_iter()
             .filter_map(|result| result.ok()) // Filter out only Ok values
             .collect();
 
@@ -187,7 +190,10 @@ impl Index {
                 .map_err(|e| CreationError(e.to_string()))?;
 
             let str_path = path.to_string_lossy().to_string();
-            if !Self::checksum_is_equal(&str_path, existing_checksum).await.unwrap_or(false) {
+            if !Self::checksum_is_equal(&str_path, existing_checksum)
+                .await
+                .unwrap_or(false)
+            {
                 println!("Adding document: {}", relative_path.to_string_lossy());
                 self.add_document(path).await?;
                 Self::calculate_checksum(&str_path).await
@@ -291,14 +297,18 @@ impl Index {
                 .join(LITT_DIRECTORY_NAME)
                 .join(PAGES_DIRECTORY_NAME)
                 .join(doc_id.to_string());
-            create_dir_all(&pages_path).await.map_err(|e| CreationError(e.to_string()))?;
+            create_dir_all(&pages_path)
+                .await
+                .map_err(|e| CreationError(e.to_string()))?;
             let full_path = dir_entry;
 
             // Check filetype (pdf/ txt)
             let num = if full_path.to_string_lossy().ends_with("pdf") {
-                self.add_pdf_document(dir_entry, pages_path, full_path).await?
+                self.add_pdf_document(dir_entry, pages_path, full_path)
+                    .await?
             } else {
-                self.add_txt_document(dir_entry, pages_path, full_path).await?
+                self.add_txt_document(dir_entry, pages_path, full_path)
+                    .await?
             };
             println!(
                 "{} loaded {} page{} at {}",
@@ -349,7 +359,8 @@ impl Index {
                     .await
                     .map_err(|e| TxtParseError(e.to_string()))?;
                 let mut body = String::new();
-                file.read_to_string(&mut body).await
+                file.read_to_string(&mut body)
+                    .await
                     .map_err(|e| PdfParseError(e.to_string()))?;
                 self.add_page(dir_entry, page_number, &page_path, &body)?;
             }
@@ -462,8 +473,13 @@ impl Index {
     }
 
     async fn calculate_checksum(path: &str) -> Result<(String, (u64, SystemTime))> {
-        let file = File::open(path).await.map_err(|e| CreationError(e.to_string()))?;
-        let metadata = file.metadata().await.map_err(|e| CreationError(e.to_string()))?;
+        let file = File::open(path)
+            .await
+            .map_err(|e| CreationError(e.to_string()))?;
+        let metadata = file
+            .metadata()
+            .await
+            .map_err(|e| CreationError(e.to_string()))?;
         let modified = metadata
             .modified()
             .map_err(|e| CreationError(e.to_string()))?;
@@ -474,8 +490,13 @@ impl Index {
 
     async fn checksum_is_equal(path: &str, checksum: Option<&(u64, SystemTime)>) -> Result<bool> {
         if let Some((len, last_modified)) = checksum {
-            let file = File::open(path).await.map_err(|e| CreationError(e.to_string()))?;
-            let metadata = file.metadata().await.map_err(|e| CreationError(e.to_string()))?;
+            let file = File::open(path)
+                .await
+                .map_err(|e| CreationError(e.to_string()))?;
+            let metadata = file
+                .metadata()
+                .await
+                .map_err(|e| CreationError(e.to_string()))?;
             let modified = metadata
                 .modified()
                 .map_err(|e| CreationError(e.to_string()))?;
@@ -500,48 +521,57 @@ mod tests {
 
     static SEARCH_SCHEMA: Lazy<SearchSchema> = Lazy::new(SearchSchema::default);
 
-
     #[test]
     #[serial]
     fn test_create() {
-        run_test(|| Box::pin(async {
-            let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).await.unwrap();
-            let (index_schema, index_path) = match index {
-                Index::Writing {
-                    schema,
-                    documents_path,
-                    ..
-                } => (schema, documents_path),
-                Index::Reading { .. } => panic!("Wrong index state"),
-            };
-            assert_eq!(SEARCH_SCHEMA.clone().schema, index_schema.schema);
-            assert_eq!(PathBuf::from(TEST_DIR_NAME), index_path);
-        }))
+        run_test(|| {
+            Box::pin(async {
+                let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone())
+                    .await
+                    .unwrap();
+                let (index_schema, index_path) = match index {
+                    Index::Writing {
+                        schema,
+                        documents_path,
+                        ..
+                    } => (schema, documents_path),
+                    Index::Reading { .. } => panic!("Wrong index state"),
+                };
+                assert_eq!(SEARCH_SCHEMA.clone().schema, index_schema.schema);
+                assert_eq!(PathBuf::from(TEST_DIR_NAME), index_path);
+            })
+        })
     }
 
     #[test]
     #[serial]
     fn test_open_or_create() {
-        run_test(|| Box::pin(async {
-            Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).await.unwrap();
+        run_test(|| {
+            Box::pin(async {
+                Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone())
+                    .await
+                    .unwrap();
 
-            let opened_index = Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).await.unwrap();
+                let opened_index = Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone())
+                    .await
+                    .unwrap();
 
-            let (index_schema, index_path) = match opened_index {
-                Index::Reading {
-                    schema,
-                    documents_path,
-                    ..
-                } => (schema, documents_path),
-                Index::Writing { .. } => panic!("Wrong index state"),
-            };
+                let (index_schema, index_path) = match opened_index {
+                    Index::Reading {
+                        schema,
+                        documents_path,
+                        ..
+                    } => (schema, documents_path),
+                    Index::Writing { .. } => panic!("Wrong index state"),
+                };
 
-            assert_eq!(SEARCH_SCHEMA.clone().schema, index_schema.schema);
-            assert_eq!(PathBuf::from(TEST_DIR_NAME), index_path);
-            assert!(Path::new(TEST_DIR_NAME)
-                .join(LITT_DIRECTORY_NAME)
-                .join(INDEX_DIRECTORY_NAME)
-                .is_dir())
-        }))
+                assert_eq!(SEARCH_SCHEMA.clone().schema, index_schema.schema);
+                assert_eq!(PathBuf::from(TEST_DIR_NAME), index_path);
+                assert!(Path::new(TEST_DIR_NAME)
+                    .join(LITT_DIRECTORY_NAME)
+                    .join(INDEX_DIRECTORY_NAME)
+                    .is_dir())
+            })
+        })
     }
 }

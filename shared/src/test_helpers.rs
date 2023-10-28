@@ -22,14 +22,12 @@ fn teardown() {
     cleanup_dir_and_file(TEST_DIR_NAME, TEST_FILE_PATH);
 }
 pub fn run_test<T>(test: T)
-    where
-        T: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + panic::UnwindSafe,
+where
+    T: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + panic::UnwindSafe,
 {
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        runtime.block_on(test())
-    }));
+    let result = panic::catch_unwind(AssertUnwindSafe(|| runtime.block_on(test())));
 
     teardown();
 
