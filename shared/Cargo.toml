@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 
 tantivy = { workspace = true }
+tokio = { workspace = true }

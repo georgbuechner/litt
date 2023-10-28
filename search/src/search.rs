@@ -197,29 +197,14 @@ mod tests {
     const TEST_DIR_NAME: &str = "../resources";
     const TEST_DOC_NAME: &str = "test.pdf";
 
-    fn teardown() {
-        cleanup_litt_files(TEST_DIR_NAME)
-    }
-    fn run_test<T>(test: T)
-        where
-            T: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + panic::UnwindSafe,
-    {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
+    use litt_shared::test_helpers::run_test;
 
-        let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            runtime.block_on(test())
-        }));
-
-        teardown();
-
-        assert!(result.is_ok())
-    }
-
-    fn create_searcher() -> Result<Search> {
+    async fn create_searcher() -> Result<Search> {
         let search_schema = SearchSchema::default();
-        let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
+        let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).await.unwrap();
         let readable_index = index
             .add_all_documents()
+            .await
             .map_err(|e| SearchError(e.to_string()))?;
         let searcher = readable_index
             .searcher()
@@ -231,7 +216,7 @@ mod tests {
     #[test]
     fn test_search() {
         run_test(|| Box::pin(async {
-            let search = create_searcher().await;
+            let search = create_searcher().await.unwrap();
             test_normal_search(&search);
             test_fuzzy_search(&search);
             test_limit_and_offset(&search);

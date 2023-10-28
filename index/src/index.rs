@@ -489,38 +489,17 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use std::panic;
-    use std::panic::AssertUnwindSafe;
 
     use once_cell::sync::Lazy;
     use serial_test::serial;
 
-    use litt_shared::test_helpers::cleanup_dir_and_file;
+    use litt_shared::test_helpers::run_test;
+    use litt_shared::test_helpers::TEST_DIR_NAME;
 
     use super::*;
 
-    const TEST_DIR_NAME: &str = "resources";
-    const TEST_FILE_PATH: &str = "test.pdf";
-
     static SEARCH_SCHEMA: Lazy<SearchSchema> = Lazy::new(SearchSchema::default);
 
-    fn teardown() {
-        cleanup_dir_and_file(TEST_DIR_NAME, TEST_FILE_PATH);
-    }
-
-    fn run_test<T>(test: T)
-        where
-            T: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + panic::UnwindSafe,
-    {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-
-        let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            runtime.block_on(test())
-        }));
-
-        teardown();
-
-        assert!(result.is_ok())
-    }
 
     #[test]
     #[serial]
