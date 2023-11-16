@@ -14,13 +14,13 @@ fn test_index_and_search() {
     run_test(|| {
         let search_schema = SearchSchema::default();
 
-        let mut index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
-        index.add_all_documents().unwrap();
+        let writeable_index = Index::create(TEST_DIR_NAME, search_schema.clone()).unwrap();
+        let readable_index = writeable_index.add_all_documents().unwrap();
 
         // # Searching
 
         // init search
-        let search = Search::new(index, search_schema);
+        let search = Search::new(readable_index, search_schema);
 
         // do seach: expect 1 results
         let input = String::from("Hello");
