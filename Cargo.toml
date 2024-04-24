@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.dependencies]
-tantivy = "0.21.0"
+tantivy = "0.22.0"
 clap = "4.2.2"
 serde = "1.0.160"
 serde_json = "1.0"
