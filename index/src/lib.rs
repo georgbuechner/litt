@@ -10,6 +10,8 @@ pub enum LittIndexError {
     OpenError(String),
     ReloadError(String),
     WriteError(String),
+    StateError(String),
+    ReadError(String),
     PdfParseError(String),
     TxtParseError(String),
 }
@@ -21,6 +23,8 @@ impl fmt::Display for LittIndexError {
             LittIndexError::OpenError(s) => write!(f, "Error opening existing index: {}", s),
             LittIndexError::UpdateError(s) => write!(f, "Error updating the index: {}", s),
             LittIndexError::WriteError(s) => write!(f, "Index Write Error: {}", s),
+            LittIndexError::ReadError(s) => write!(f, "Index Read Error: {}", s),
+            LittIndexError::StateError(s) => write!(f, "Index is not in assumed state: {}", s),
             LittIndexError::PdfParseError(s) => write!(f, "Error parsing PDF: {}", s),
             LittIndexError::TxtParseError(s) => write!(f, "Error parsing txt-file: {}", s),
             LittIndexError::ReloadError(s) => write!(f, "Error reloading index writer: {}", s),
