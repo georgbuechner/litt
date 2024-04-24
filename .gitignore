@@ -1,3 +1,5 @@
 *Cargo.lock
+# Do not ignore Cargo.lock for the binary
+!litt/Cargo.lock
 /target/
 /*/target/
