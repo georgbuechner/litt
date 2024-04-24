@@ -1,34 +1,21 @@
 use std::collections::HashMap;
-use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
-use std::{fmt, fs};
+use std::fs;
+use thiserror::Error;
 
 use litt_shared::LITT_DIRECTORY_NAME;
 
 const INDICIES_FILENAME: &str = "indices.json";
 const FAST_RESULTS_FILENAME: &str = "last_results.json";
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum LittIndexTrackerError {
+    #[error("Unknown error reading from index-config: `{0}`")]
     UnknownError(String),
+    #[error("The given index `{0}` does not exist")]
     NotFound(String),
+    #[error("The index-config could not be stored: `{0}`")]
     SaveError(String),
-}
-
-impl fmt::Display for LittIndexTrackerError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self {
-            LittIndexTrackerError::UnknownError(s) => {
-                write!(f, "Unknown error reading from index-config: {}", s)
-            }
-            LittIndexTrackerError::NotFound(s) => {
-                write!(f, "The given index {} does not exist", s)
-            }
-            LittIndexTrackerError::SaveError(s) => {
-                write!(f, "The index-config could not be stored: {}", s)
-            }
-        }
-    }
 }
 
 pub type Result<T> = std::result::Result<T, LittIndexTrackerError>;

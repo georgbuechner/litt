@@ -1,35 +1,27 @@
-use std::fmt;
-use std::fmt::Formatter;
+use thiserror::Error;
 
 pub mod index;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum LittIndexError {
+    #[error("Index Creation Error: `{0}`")]
     CreationError(String),
+    #[error("Error updating the index: `{0}`")]
     UpdateError(String),
+    #[error("Error opening existing index: `{0}`")]
     OpenError(String),
+    #[error("Error reloading index writer: `{0}`")]
     ReloadError(String),
+    #[error("Index Write Error: `{0}`")]
     WriteError(String),
+    #[error("Index is not in assumed state: `{0}`")]
     StateError(String),
+    #[error("Index Read Error: `{0}`")]
     ReadError(String),
+    #[error("Error parsing PDF: `{0}`")]
     PdfParseError(String),
+    #[error("Error parsing txt-file: `{0}`")]
     TxtParseError(String),
-}
-
-impl fmt::Display for LittIndexError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self {
-            LittIndexError::CreationError(s) => write!(f, "Index Creation Error: {}", s),
-            LittIndexError::OpenError(s) => write!(f, "Error opening existing index: {}", s),
-            LittIndexError::UpdateError(s) => write!(f, "Error updating the index: {}", s),
-            LittIndexError::WriteError(s) => write!(f, "Index Write Error: {}", s),
-            LittIndexError::ReadError(s) => write!(f, "Index Read Error: {}", s),
-            LittIndexError::StateError(s) => write!(f, "Index is not in assumed state: {}", s),
-            LittIndexError::PdfParseError(s) => write!(f, "Error parsing PDF: {}", s),
-            LittIndexError::TxtParseError(s) => write!(f, "Error parsing txt-file: {}", s),
-            LittIndexError::ReloadError(s) => write!(f, "Error reloading index writer: {}", s),
-        }
-    }
 }
 
 pub type Result<T> = std::result::Result<T, LittIndexError>;

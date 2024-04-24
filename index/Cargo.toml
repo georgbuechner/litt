@@ -9,6 +9,7 @@ edition = "2021"
 tantivy = { workspace = true }
 uuid = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 walkdir = "2.3.3"
 litt_shared = { path = "../shared" }
 rayon = "1.8.0"
