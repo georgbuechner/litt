@@ -178,7 +178,9 @@ fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError::General(e.to_string())),
         };
 
-        let searcher = index.searcher().map_err(|e| LittError::General(e.to_string()))?;
+        let searcher = index
+            .searcher()
+            .map_err(|e| LittError::General(e.to_string()))?;
         println!(
             "Successfully indexed {} document pages in {:?}",
             searcher.num_docs(),
@@ -211,7 +213,9 @@ fn main() -> Result<(), LittError> {
         Ok(index) => index,
         Err(e) => return Err(LittError::General(e.to_string())),
     };
-    let searcher = index.searcher().map_err(|e| LittError::General(e.to_string()))?;
+    let searcher = index
+        .searcher()
+        .map_err(|e| LittError::General(e.to_string()))?;
 
     // update existing index
     if cli.update {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use litt_shared::LITT_DIRECTORY_NAME;
