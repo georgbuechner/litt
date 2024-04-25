@@ -1,8 +1,7 @@
 use std::collections::{HashMap, LinkedList};
 use std::fs;
 use tantivy::collector::TopDocs;
-use tantivy::schema::Value;
-use tantivy::{DocAddress, Snippet, SnippetGenerator, TantivyDocument};
+use tantivy::{DocAddress, Snippet, SnippetGenerator};
 
 extern crate litt_index;
 use litt_index::index::Index;
@@ -88,7 +87,7 @@ impl Search {
             let segment_ord = doc_address.segment_ord;
             let doc_id = doc_address.doc_id;
             // Retrieve the actual content of documents given its `doc_address`.
-            let retrieved_doc: TantivyDocument = searcher
+            let retrieved_doc = searcher
                 .doc(doc_address)
                 .map_err(|e| SearchError(e.to_string()))?;
             let cur_title = retrieved_doc
@@ -96,7 +95,7 @@ impl Search {
                 .ok_or(SearchError(String::from(
                     "Fatal: Field \"title\" not found!",
                 )))?
-                .as_str()
+                .as_text()
                 .ok_or(SearchError(String::from(
                     "Fatal: Field \"title\" could not be read as text!",
                 )))?;
@@ -145,7 +144,7 @@ impl Search {
         let mut snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
             .map_err(|e| SearchError(e.to_string()))?;
         snippet_generator.set_max_num_chars(70);
-        let retrieved_doc: TantivyDocument = searcher
+        let retrieved_doc = searcher
             .doc(DocAddress {
                 segment_ord: (search_result.segment_ord),
                 doc_id: (search_result.doc_id),
@@ -158,7 +157,7 @@ impl Search {
             .ok_or(SearchError(String::from(
                 "Fatal: Field \"path\" not found!",
             )))?
-            .as_str()
+            .as_text()
             .ok_or(SearchError(String::from(
                 "Fatal: Field \"path\" could not be read as text!",
             )))?;

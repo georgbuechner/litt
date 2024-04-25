@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 use tantivy::query::QueryParser;
-use tantivy::schema::{Schema, TantivyDocument};
+use tantivy::schema::{Document as TantivyDocument, Schema};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
