@@ -6,6 +6,7 @@ use tantivy::{DocAddress, Snippet, SnippetGenerator, TantivyDocument};
 
 extern crate litt_index;
 use litt_index::index::Index;
+use litt_shared::message_display::MessageDisplay;
 use litt_shared::search_schema::SearchSchema;
 
 use crate::LittSearchError::SearchError;
@@ -31,8 +32,8 @@ impl SearchResult {
     }
 }
 
-pub struct Search {
-    index: Index,
+pub struct Search<'a, T: MessageDisplay> {
+    index: Index<'a, T>,
     schema: SearchSchema,
 }
 
@@ -41,8 +42,8 @@ pub enum SearchTerm {
     Exact(String),
 }
 
-impl Search {
-    pub fn new(index: Index, schema: SearchSchema) -> Self {
+impl <'a, T: MessageDisplay> Search<'a, T> {
+    pub fn new(index: Index<'a, T>, schema: SearchSchema) -> Self {
         Self { index, schema }
     }
 
@@ -190,6 +191,7 @@ impl Search {
 #[cfg(test)]
 mod tests {
     use std::panic;
+    use litt_shared::message_display::SimpleMessageDisplay;
 
     use litt_shared::test_helpers::cleanup_litt_files;
 
@@ -212,9 +214,9 @@ mod tests {
         assert!(result.is_ok())
     }
 
-    fn create_searcher() -> Result<Search> {
+    fn create_searcher<T: MessageDisplay>(message_display: &T) -> Result<Search<T>> {
         let search_schema = SearchSchema::default();
-        let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
+        let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone(), message_display).unwrap();
         let readable_index = index
             .add_all_documents()
             .map_err(|e| SearchError(e.to_string()))?;
@@ -228,14 +230,15 @@ mod tests {
     #[test]
     fn test_search() {
         run_test(|| {
-            let search = create_searcher().unwrap();
+            let message_display = SimpleMessageDisplay;
+            let search = create_searcher(&message_display).unwrap();
             test_normal_search(&search);
             test_fuzzy_search(&search);
             test_limit_and_offset(&search);
         })
     }
 
-    fn test_normal_search(search: &Search) {
+    fn test_normal_search(search: &Search<SimpleMessageDisplay>) {
         let test_cases: HashMap<&str, Vec<u32>> = HashMap::from([
             ("flooding", vec![2]),
             ("the", vec![1, 2]),
@@ -270,7 +273,7 @@ mod tests {
         }
     }
 
-    fn test_fuzzy_search(search: &Search) {
+    fn test_fuzzy_search(search: &Search<SimpleMessageDisplay>) {
         let test_cases: HashMap<&str, Vec<u32>> = HashMap::from([
             ("Hündin", vec![1]),
             ("flooding", vec![2]),
@@ -302,7 +305,7 @@ mod tests {
         }
     }
 
-    fn test_limit_and_offset(search: &Search) {
+    fn test_limit_and_offset(search: &Search<SimpleMessageDisplay>) {
         // river is contained twice
         let results = search
             .search(&SearchTerm::Exact(String::from("river")), 0, 10)

@@ -17,6 +17,8 @@ use litt_shared::LITT_DIRECTORY_NAME;
 
 mod cli;
 mod tracker;
+mod message_display;
+
 use cli::Cli;
 use tracker::IndexTracker;
 
@@ -141,7 +143,7 @@ fn main() -> Result<(), LittError> {
     }
 
     // check if name of litt index was given by user
-    let index_name = match cli.litt_index {
+    let index_name = match &cli.litt_index {
         None => {
             Cli::command()
                 .print_help()
@@ -154,7 +156,7 @@ fn main() -> Result<(), LittError> {
     // initialize new index
     if !cli.init.is_empty() {
         let current_dir = env::current_dir().map_err(|e| LittError(e.to_string()))?;
-        let path = current_dir.join(cli.init);
+        let path = current_dir.join(&cli.init);
         println!(
             "Creating new index \"{}\" at: {}: ",
             index_name,
@@ -174,7 +176,7 @@ fn main() -> Result<(), LittError> {
             return Err(LittError(e.to_string()));
         }
 
-        let mut index = match Index::create(&path, SearchSchema::default()) {
+        let mut index = match Index::create(&path, SearchSchema::default(), &cli) {
             Ok(index) => index,
             Err(e) => return Err(LittError(e.to_string())),
         };
@@ -213,7 +215,7 @@ fn main() -> Result<(), LittError> {
     let index_path = index_tracker
         .get_path(&index_name)
         .map_err(|e| LittError(e.to_string()))?;
-    let index = match Index::open(index_path.clone(), SearchSchema::default()) {
+    let index = match Index::open(index_path.clone(), SearchSchema::default(), &cli) {
         Ok(index) => index,
         Err(e) => return Err(LittError(e.to_string())),
     };

@@ -76,9 +76,9 @@ impl IndexTracker {
             .find_map(|(_, val)| if val == path { Some(true) } else { None })
     }
 
-    pub fn add(&mut self, name: String, path: impl AsRef<Path>) -> Result<()> {
+    pub fn add(&mut self, name: &str, path: impl AsRef<Path>) -> Result<()> {
         let documents_path = PathBuf::from(path.as_ref());
-        self.indices.insert(name, documents_path);
+        self.indices.insert(name.to_string(), documents_path);
         self.store_indicies()
     }
 

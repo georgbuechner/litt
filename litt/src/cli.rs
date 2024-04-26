@@ -1,4 +1,5 @@
 use clap::Parser;
+use litt_shared::message_display::MessageDisplay;
 
 /// Literature tool for searching pdfs in a directory (litt-index).
 #[derive(Parser, Debug)]
@@ -48,6 +49,8 @@ pub struct Cli {
     #[arg(long, long, default_value_t = 2)]
     pub distance: u8,
 }
+
+impl MessageDisplay for Cli {}
 
 #[test]
 fn verify_cli() {
