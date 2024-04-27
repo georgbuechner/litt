@@ -3,6 +3,7 @@ use crate::LittIndexError::{
     WriteError,
 };
 use crate::Result;
+use litt_shared::message_display::{Message, MessageDisplay};
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
 use rayon::prelude::*;
@@ -18,7 +19,6 @@ use tantivy::schema::{Schema, TantivyDocument};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
-use litt_shared::message_display::{Message, MessageDisplay};
 
 const INDEX_DIRECTORY_NAME: &str = "index";
 const PAGES_DIRECTORY_NAME: &str = "pages";
@@ -44,8 +44,12 @@ pub enum Index<'a, T: MessageDisplay> {
     },
 }
 
-impl <'a, T: MessageDisplay> Index<'a, T> {
-    pub fn create(path: impl AsRef<Path>, schema: SearchSchema, message_display: &'a T) -> Result<Self> {
+impl<'a, T: MessageDisplay> Index<'a, T> {
+    pub fn create(
+        path: impl AsRef<Path>,
+        schema: SearchSchema,
+        message_display: &'a T,
+    ) -> Result<Self> {
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
@@ -58,11 +62,15 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
             index,
             writer,
             schema,
-            message_display
+            message_display,
         })
     }
 
-    pub fn open(path: impl AsRef<Path>, schema: SearchSchema, message_display: &'a T) -> Result<Self> {
+    pub fn open(
+        path: impl AsRef<Path>,
+        schema: SearchSchema,
+        message_display: &'a T,
+    ) -> Result<Self> {
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
@@ -74,11 +82,15 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
             schema,
             reader,
             documents_path,
-            message_display
+            message_display,
         })
     }
 
-    pub fn open_or_create(path: impl AsRef<Path>, schema: SearchSchema, message_display: &'a T) -> Result<Self> {
+    pub fn open_or_create(
+        path: impl AsRef<Path>,
+        schema: SearchSchema,
+        message_display: &'a T,
+    ) -> Result<Self> {
         // TODO make search schema parameter optional and load schema from existing index
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path
@@ -94,7 +106,7 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
                     index,
                     writer,
                     schema,
-                    message_display
+                    message_display,
                 })
             }
             Err(_) => Self::open(path, schema, message_display),
@@ -138,7 +150,7 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
                 schema,
                 reader,
                 documents_path,
-                message_display
+                message_display,
             };
             Ok(self)
         } else {
@@ -161,7 +173,7 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
                 schema,
                 documents_path,
                 writer,
-                message_display
+                message_display,
             };
             self.add_all_documents()
         } else {
@@ -174,7 +186,12 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
         path: &DirEntry,
         existing_checksum: Option<&(u64, SystemTime)>,
     ) -> Result<(String, (u64, SystemTime))> {
-        if let Index::Writing { documents_path, message_display, .. } = &self {
+        if let Index::Writing {
+            documents_path,
+            message_display,
+            ..
+        } = &self
+        {
             let relative_path = path
                 .path()
                 .strip_prefix(documents_path)
@@ -182,7 +199,10 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
 
             let str_path = path.path().to_string_lossy().to_string();
             if !Self::checksum_is_equal(&str_path, existing_checksum).unwrap_or(false) {
-                message_display.display(Message::Info(&format!("Adding document: {}", relative_path.to_string_lossy())));
+                message_display.display(Message::Info(&format!(
+                    "Adding document: {}",
+                    relative_path.to_string_lossy()
+                )));
                 self.add_document(path)?;
                 Self::calculate_checksum(&str_path)
             } else {
@@ -278,7 +298,12 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
 
     /// Add a tantivy document to the index for each page of the document.
     fn add_document(&self, dir_entry: &DirEntry) -> Result<()> {
-        if let Index::Writing { documents_path, message_display, .. } = self {
+        if let Index::Writing {
+            documents_path,
+            message_display,
+            ..
+        } = self
+        {
             // Create custom directory to store all pages:
             let doc_id = Uuid::new_v4();
             let pages_path = documents_path
@@ -462,11 +487,11 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use litt_shared::message_display::SimpleMessageDisplay;
     use litt_shared::test_helpers::cleanup_dir_and_file;
     use once_cell::sync::Lazy;
     use serial_test::serial;
     use std::panic;
-    use litt_shared::message_display::SimpleMessageDisplay;
 
     const TEST_DIR_NAME: &str = "resources";
     const TEST_FILE_PATH: &str = "test.pdf";
@@ -492,8 +517,9 @@ mod tests {
     #[serial]
     fn test_create() {
         run_test(|| {
-            let message_display = &SimpleMessageDisplay{};
-            let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone(), message_display).unwrap();
+            let message_display = &SimpleMessageDisplay {};
+            let index =
+                Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone(), message_display).unwrap();
             let (index_schema, index_path) = match index {
                 Index::Writing {
                     schema,
@@ -511,10 +537,12 @@ mod tests {
     #[serial]
     fn test_open_or_create() {
         run_test(|| {
-            let message_display = &SimpleMessageDisplay{};
+            let message_display = &SimpleMessageDisplay {};
             Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone(), message_display).unwrap();
 
-            let opened_index = Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone(), message_display).unwrap();
+            let opened_index =
+                Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone(), message_display)
+                    .unwrap();
 
             let (index_schema, index_path) = match opened_index {
                 Index::Reading {

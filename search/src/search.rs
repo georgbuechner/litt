@@ -42,7 +42,7 @@ pub enum SearchTerm {
     Exact(String),
 }
 
-impl <'a, T: MessageDisplay> Search<'a, T> {
+impl<'a, T: MessageDisplay> Search<'a, T> {
     pub fn new(index: Index<'a, T>, schema: SearchSchema) -> Self {
         Self { index, schema }
     }
@@ -190,8 +190,8 @@ impl <'a, T: MessageDisplay> Search<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use std::panic;
     use litt_shared::message_display::SimpleMessageDisplay;
+    use std::panic;
 
     use litt_shared::test_helpers::cleanup_litt_files;
 
@@ -216,7 +216,8 @@ mod tests {
 
     fn create_searcher<T: MessageDisplay>(message_display: &T) -> Result<Search<T>> {
         let search_schema = SearchSchema::default();
-        let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone(), message_display).unwrap();
+        let index =
+            Index::open_or_create(TEST_DIR_NAME, search_schema.clone(), message_display).unwrap();
         let readable_index = index
             .add_all_documents()
             .map_err(|e| SearchError(e.to_string()))?;

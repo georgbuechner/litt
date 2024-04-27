@@ -16,8 +16,8 @@ use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
 
 mod cli;
-mod tracker;
 mod message_display;
+mod tracker;
 
 use cli::Cli;
 use tracker::IndexTracker;
@@ -161,8 +161,8 @@ fn main() -> Result<(), LittError> {
         cli.display(Message::Info(&format!(
             "Creating new index \"{}\" at: {}: ",
             index_name,
-            path.to_string_lossy())
-        ));
+            path.to_string_lossy()
+        )));
         if index_tracker.exists(&index_name) || index_tracker.path_exists(&path).is_some() {
             return Err(LittError(format!(
                 "Failed to create index since it already exists: name: {}, path: {}",
@@ -191,14 +191,14 @@ fn main() -> Result<(), LittError> {
         cli.display(Message::Info(&format!(
             "Successfully indexed {} document pages in {:?}",
             searcher.num_docs(),
-            start.elapsed())
-        ));
+            start.elapsed()
+        )));
         return Ok(());
     }
 
     if cli.remove {
         // remove litt directory at index path
-        let path = match index_tracker.get_path(&index_name) {
+        let path = match index_tracker.get_path(index_name) {
             Ok(path) => path,
             Err(e) => return Err(LittError(e.to_string())),
         };
@@ -214,7 +214,7 @@ fn main() -> Result<(), LittError> {
 
     // get index:
     let index_path = index_tracker
-        .get_path(&index_name)
+        .get_path(index_name)
         .map_err(|e| LittError(e.to_string()))?;
     let index = match Index::open(index_path.clone(), SearchSchema::default(), &cli) {
         Ok(index) => index,
@@ -224,7 +224,10 @@ fn main() -> Result<(), LittError> {
 
     // update existing index
     if cli.update {
-        cli.display(Message::Info(&format!("Updating index \"{}\".", index_name)));
+        cli.display(Message::Info(&format!(
+            "Updating index \"{}\".",
+            index_name
+        )));
         let old_num_docs = searcher.num_docs();
         let start = Instant::now();
         return match index.update() {
@@ -244,7 +247,10 @@ fn main() -> Result<(), LittError> {
     }
     // reload existing index
     if cli.reload {
-        cli.display(Message::Info(&format!("Reloading index \"{}\".", index_name)));
+        cli.display(Message::Info(&format!(
+            "Reloading index \"{}\".",
+            index_name
+        )));
         let old_num_docs = searcher.num_docs();
         let start = Instant::now();
         if let Err(e) = index.reload() {
@@ -278,7 +284,10 @@ fn main() -> Result<(), LittError> {
             Ok(results) => results,
             Err(e) => return Err(LittError(e.to_string())),
         };
-        cli.display(Message::Info(&format!("Found results in {} document(s):", results.len())));
+        cli.display(Message::Info(&format!(
+            "Found results in {} document(s):",
+            results.len()
+        )));
         let mut fast_store_results: HashMap<u32, (String, u32, String)> = HashMap::new();
         let first_query_term = get_first_term(&cli.term);
         let mut counter = 0;
@@ -289,9 +298,16 @@ fn main() -> Result<(), LittError> {
                 .with_extension("")
                 .to_string_lossy()
                 .to_string();
-            cli.display(Message::Info(&format!("{}. {}", counter, title_name.bold())));
+            cli.display(Message::Info(&format!(
+                "{}. {}",
+                counter,
+                title_name.bold()
+            )));
             let index_path = index_path.join(title);
-            cli.display(Message::Info(&format!("   ({})", index_path.to_string_lossy().italic())));
+            cli.display(Message::Info(&format!(
+                "   ({})",
+                index_path.to_string_lossy().italic()
+            )));
             for page in pages {
                 fast_store_results.insert(
                     res_counter,
@@ -323,12 +339,14 @@ fn main() -> Result<(), LittError> {
             results.values().fold(0, |acc, list| acc + list.len()),
             num_docs,
             start.elapsed()
-        ))
-        );
+        )));
     }
     // do interactive search
     else {
-        cli.display(Message::Info(&format!("Starting interactive search for \"{}\".", index_name)));
+        cli.display(Message::Info(&format!(
+            "Starting interactive search for \"{}\".",
+            index_name
+        )));
     }
     Ok(())
 }
