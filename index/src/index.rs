@@ -487,8 +487,8 @@ impl<'a, T: MessageDisplay> Index<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use litt_shared::message_display::SimpleMessageDisplay;
     use litt_shared::test_helpers::cleanup_dir_and_file;
+    use litt_shared::test_helpers::SimpleMessageDisplay;
     use once_cell::sync::Lazy;
     use serial_test::serial;
     use std::panic;

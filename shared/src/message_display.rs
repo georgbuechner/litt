@@ -13,7 +13,3 @@ pub trait MessageDisplay: Sync {
         }
     }
 }
-
-pub struct SimpleMessageDisplay;
-
-impl MessageDisplay for SimpleMessageDisplay {}

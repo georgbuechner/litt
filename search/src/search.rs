@@ -190,7 +190,7 @@ impl<'a, T: MessageDisplay> Search<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use litt_shared::message_display::SimpleMessageDisplay;
+    use litt_shared::test_helpers::SimpleMessageDisplay;
     use std::panic;
 
     use litt_shared::test_helpers::cleanup_litt_files;

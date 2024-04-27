@@ -1,6 +1,7 @@
 use std::fs::{remove_dir_all, remove_file};
 use std::path::PathBuf;
 
+use crate::message_display::MessageDisplay;
 use crate::LITT_DIRECTORY_NAME;
 
 pub fn cleanup_dir_and_file(directory: &str, file_name: &str) {
@@ -13,3 +14,7 @@ pub fn cleanup_litt_files(directory: &str) {
     let index_path = PathBuf::from(directory).join(LITT_DIRECTORY_NAME);
     _ = std::fs::remove_dir_all(index_path);
 }
+
+pub struct SimpleMessageDisplay;
+
+impl MessageDisplay for SimpleMessageDisplay {}
