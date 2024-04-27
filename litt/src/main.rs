@@ -163,7 +163,7 @@ fn main() -> Result<(), LittError> {
             index_name,
             path.to_string_lossy()
         )));
-        if index_tracker.exists(&index_name) || index_tracker.path_exists(&path).is_some() {
+        if index_tracker.exists(index_name) || index_tracker.path_exists(&path).is_some() {
             return Err(LittError(format!(
                 "Failed to create index since it already exists: name: {}, path: {}",
                 index_tracker.get_name(&path).unwrap_or_default(),
