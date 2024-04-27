@@ -18,7 +18,7 @@ use tantivy::schema::{Schema, TantivyDocument};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
-use litt_shared::message_display::{MessageDisplay};
+use litt_shared::message_display::{Message, MessageDisplay};
 
 const INDEX_DIRECTORY_NAME: &str = "index";
 const PAGES_DIRECTORY_NAME: &str = "pages";
@@ -174,7 +174,7 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
         path: &DirEntry,
         existing_checksum: Option<&(u64, SystemTime)>,
     ) -> Result<(String, (u64, SystemTime))> {
-        if let Index::Writing { documents_path, .. } = &self {
+        if let Index::Writing { documents_path, message_display, .. } = &self {
             let relative_path = path
                 .path()
                 .strip_prefix(documents_path)
@@ -182,14 +182,14 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
 
             let str_path = path.path().to_string_lossy().to_string();
             if !Self::checksum_is_equal(&str_path, existing_checksum).unwrap_or(false) {
-                println!("Adding document: {}", relative_path.to_string_lossy());
+                message_display.display(Message::Info(&format!("Adding document: {}", relative_path.to_string_lossy())));
                 self.add_document(path)?;
                 Self::calculate_checksum(&str_path)
             } else {
-                println!(
+                message_display.display(Message::Info(&format!(
                     "Skipped (already exists): {}",
                     relative_path.to_string_lossy()
-                );
+                )));
                 // can unwrap because this arm is only entered when existing checksum is not None
                 Ok((str_path, *(existing_checksum.unwrap())))
             }
@@ -278,7 +278,7 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
 
     /// Add a tantivy document to the index for each page of the document.
     fn add_document(&self, dir_entry: &DirEntry) -> Result<()> {
-        if let Index::Writing { documents_path, .. } = self {
+        if let Index::Writing { documents_path, message_display, .. } = self {
             // Create custom directory to store all pages:
             let doc_id = Uuid::new_v4();
             let pages_path = documents_path
@@ -294,13 +294,13 @@ impl <'a, T: MessageDisplay> Index<'a, T> {
             } else {
                 self.add_txt_document(dir_entry, pages_path, full_path)?
             };
-            println!(
+            message_display.display(Message::Info(&format!(
                 "{} loaded {} page{} at {}",
                 dir_entry.path().to_string_lossy(),
                 num,
                 if num != 1 { "s" } else { "" },
                 full_path.to_string_lossy()
-            );
+            )));
             Ok(())
         } else {
             Err(StateError("Writing".to_string()))
