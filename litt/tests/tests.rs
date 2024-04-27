@@ -3,9 +3,9 @@ use std::panic;
 extern crate litt_search;
 use litt_index::index::Index;
 use litt_search::search::Search;
+use litt_shared::message_display::SimpleMessageDisplay;
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::test_helpers::cleanup_litt_files;
-use litt_shared::message_display::SimpleMessageDisplay;
 
 const TEST_DIR_NAME: &str = "../resources";
 const TEST_FILE_NAME: &str = "test.pdf";
@@ -16,7 +16,8 @@ fn test_index_and_search() {
         let search_schema = SearchSchema::default();
         let display = SimpleMessageDisplay;
 
-        let writeable_index = Index::create(TEST_DIR_NAME, search_schema.clone(), &display).unwrap();
+        let writeable_index =
+            Index::create(TEST_DIR_NAME, search_schema.clone(), &display).unwrap();
         let readable_index = writeable_index.add_all_documents().unwrap();
 
         // # Searching
