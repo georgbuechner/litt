@@ -14,7 +14,6 @@ pub trait MessageDisplay: Sync {
     }
 }
 
-#[cfg(test)]
 pub struct SimpleMessageDisplay;
-#[cfg(test)]
+
 impl MessageDisplay for SimpleMessageDisplay {}
