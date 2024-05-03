@@ -8,6 +8,7 @@ crate-type = ["lib"]
 
 [dependencies]
 tantivy = { workspace = true }
+thiserror = { workspace = true }
 litt_shared = { path = "../shared" }
 litt_index = { path = "../index" }
 
