@@ -3,7 +3,7 @@ use crate::LittIndexError::{
     WriteError,
 };
 use crate::Result;
-use litt_shared::message_display::{Message, MessageDisplay};
+use litt_shared::message_display::{IndexMessage, Message, MessageDisplay};
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
 use rayon::prelude::*;
@@ -199,17 +199,15 @@ impl<'a, T: MessageDisplay> Index<'a, T> {
 
             let str_path = path.path().to_string_lossy().to_string();
             if !Self::checksum_is_equal(&str_path, existing_checksum).unwrap_or(false) {
-                message_display.display(Message::Info(&format!(
-                    "Adding document: {}",
-                    relative_path.to_string_lossy()
-                )));
+                message_display.display(Message::Index(IndexMessage::Adding {
+                    document_name: &relative_path.to_string_lossy(),
+                }));
                 self.add_document(path)?;
                 Self::calculate_checksum(&str_path)
             } else {
-                message_display.display(Message::Info(&format!(
-                    "Skipped (already exists): {}",
-                    relative_path.to_string_lossy()
-                )));
+                message_display.display(Message::Index(IndexMessage::SkippedExisting {
+                    document_name: &relative_path.to_string_lossy(),
+                }));
                 // can unwrap because this arm is only entered when existing checksum is not None
                 Ok((str_path, *(existing_checksum.unwrap())))
             }
