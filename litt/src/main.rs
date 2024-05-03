@@ -23,7 +23,7 @@ use cli::Cli;
 use tracker::IndexTracker;
 
 use colored::*;
-use litt_shared::message_display::{Message, MessageDisplay};
+use litt_shared::message_display::{IndexInfo, Message, MessageDisplay, TrackerMessage};
 
 #[derive(Debug)]
 struct LittError(String);
@@ -128,14 +128,19 @@ fn main() -> Result<(), LittError> {
 
     // everything that does not require litt index
 
-    // Print existing litt indices
+    // Display existing litt indices
     if cli.list {
-        cli.display(Message::Info("Currently available indices:"));
         match &index_tracker.all() {
-            Ok(indecies) => {
-                for index in indecies {
-                    cli.display(Message::Info(&format!(" - {:?}", index)));
-                }
+            Ok(indices) => {
+                cli.display(Message::Tracker(TrackerMessage::AvailableIndices(
+                    indices
+                        .iter()
+                        .map(|index| IndexInfo {
+                            name: index.0,
+                            path: index.1,
+                        })
+                        .collect(),
+                )));
             }
             Err(e) => return Err(LittError(e.to_string())),
         }
