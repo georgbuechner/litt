@@ -3,6 +3,7 @@ use crate::LittIndexError::{
     WriteError,
 };
 use crate::Result;
+use litt_shared::message_display::{IndexMessage, Message, MessageDisplay};
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
 use rayon::prelude::*;
@@ -26,23 +27,29 @@ const CHECK_SUM_MAP_FILENAME: &str = "checksum.json";
 /// The total target memory usage that will be split between a given number of threads
 const TARGET_MEMORY_BYTES: usize = 100_000_000;
 
-pub enum Index {
+pub enum Index<'a, T: MessageDisplay> {
     Writing {
         index: TantivyIndex,
         schema: SearchSchema,
         documents_path: PathBuf,
         writer: IndexWriter,
+        message_display: &'a T,
     },
     Reading {
         index: TantivyIndex,
         schema: SearchSchema,
         reader: IndexReader,
         documents_path: PathBuf,
+        message_display: &'a T,
     },
 }
 
-impl Index {
-    pub fn create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
+impl<'a, T: MessageDisplay> Index<'a, T> {
+    pub fn create(
+        path: impl AsRef<Path>,
+        schema: SearchSchema,
+        message_display: &'a T,
+    ) -> Result<Self> {
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
@@ -55,10 +62,15 @@ impl Index {
             index,
             writer,
             schema,
+            message_display,
         })
     }
 
-    pub fn open(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
+    pub fn open(
+        path: impl AsRef<Path>,
+        schema: SearchSchema,
+        message_display: &'a T,
+    ) -> Result<Self> {
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
@@ -70,10 +82,15 @@ impl Index {
             schema,
             reader,
             documents_path,
+            message_display,
         })
     }
 
-    pub fn open_or_create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
+    pub fn open_or_create(
+        path: impl AsRef<Path>,
+        schema: SearchSchema,
+        message_display: &'a T,
+    ) -> Result<Self> {
         // TODO make search schema parameter optional and load schema from existing index
         let documents_path = PathBuf::from(path.as_ref());
         let index_path = documents_path
@@ -89,9 +106,10 @@ impl Index {
                     index,
                     writer,
                     schema,
+                    message_display,
                 })
             }
-            Err(_) => Self::open(path, schema),
+            Err(_) => Self::open(path, schema, message_display),
         }
     }
 
@@ -121,6 +139,7 @@ impl Index {
             schema,
             documents_path,
             mut writer,
+            message_display,
         } = self
         {
             writer.commit().map_err(|e| WriteError(e.to_string()))?;
@@ -131,6 +150,7 @@ impl Index {
                 schema,
                 reader,
                 documents_path,
+                message_display,
             };
             Ok(self)
         } else {
@@ -143,6 +163,7 @@ impl Index {
             index,
             documents_path,
             schema,
+            message_display,
             ..
         } = self
         {
@@ -152,6 +173,7 @@ impl Index {
                 schema,
                 documents_path,
                 writer,
+                message_display,
             };
             self.add_all_documents()
         } else {
@@ -164,7 +186,12 @@ impl Index {
         path: &DirEntry,
         existing_checksum: Option<&(u64, SystemTime)>,
     ) -> Result<(String, (u64, SystemTime))> {
-        if let Index::Writing { documents_path, .. } = &self {
+        if let Index::Writing {
+            documents_path,
+            message_display,
+            ..
+        } = &self
+        {
             let relative_path = path
                 .path()
                 .strip_prefix(documents_path)
@@ -172,14 +199,15 @@ impl Index {
 
             let str_path = path.path().to_string_lossy().to_string();
             if !Self::checksum_is_equal(&str_path, existing_checksum).unwrap_or(false) {
-                println!("Adding document: {}", relative_path.to_string_lossy());
+                message_display.display(Message::Index(IndexMessage::Adding {
+                    document_name: &relative_path.to_string_lossy(),
+                }));
                 self.add_document(path)?;
                 Self::calculate_checksum(&str_path)
             } else {
-                println!(
-                    "Skipped (already exists): {}",
-                    relative_path.to_string_lossy()
-                );
+                message_display.display(Message::Index(IndexMessage::SkippedExisting {
+                    document_name: &relative_path.to_string_lossy(),
+                }));
                 // can unwrap because this arm is only entered when existing checksum is not None
                 Ok((str_path, *(existing_checksum.unwrap())))
             }
@@ -268,7 +296,12 @@ impl Index {
 
     /// Add a tantivy document to the index for each page of the document.
     fn add_document(&self, dir_entry: &DirEntry) -> Result<()> {
-        if let Index::Writing { documents_path, .. } = self {
+        if let Index::Writing {
+            documents_path,
+            message_display,
+            ..
+        } = self
+        {
             // Create custom directory to store all pages:
             let doc_id = Uuid::new_v4();
             let pages_path = documents_path
@@ -284,13 +317,13 @@ impl Index {
             } else {
                 self.add_txt_document(dir_entry, pages_path, full_path)?
             };
-            println!(
+            message_display.display(Message::Info(&format!(
                 "{} loaded {} page{} at {}",
                 dir_entry.path().to_string_lossy(),
                 num,
                 if num != 1 { "s" } else { "" },
                 full_path.to_string_lossy()
-            );
+            )));
             Ok(())
         } else {
             Err(StateError("Writing".to_string()))
@@ -453,6 +486,7 @@ impl Index {
 mod tests {
     use super::*;
     use litt_shared::test_helpers::cleanup_dir_and_file;
+    use litt_shared::test_helpers::SimpleMessageDisplay;
     use once_cell::sync::Lazy;
     use serial_test::serial;
     use std::panic;
@@ -481,7 +515,9 @@ mod tests {
     #[serial]
     fn test_create() {
         run_test(|| {
-            let index = Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            let message_display = &SimpleMessageDisplay {};
+            let index =
+                Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone(), message_display).unwrap();
             let (index_schema, index_path) = match index {
                 Index::Writing {
                     schema,
@@ -499,9 +535,12 @@ mod tests {
     #[serial]
     fn test_open_or_create() {
         run_test(|| {
-            Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            let message_display = &SimpleMessageDisplay {};
+            Index::create(TEST_DIR_NAME, SEARCH_SCHEMA.clone(), message_display).unwrap();
 
-            let opened_index = Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone()).unwrap();
+            let opened_index =
+                Index::open_or_create(TEST_DIR_NAME, SEARCH_SCHEMA.clone(), message_display)
+                    .unwrap();
 
             let (index_schema, index_path) = match opened_index {
                 Index::Reading {
