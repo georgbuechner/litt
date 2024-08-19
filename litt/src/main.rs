@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::env;
-use std::fmt;
-use std::fmt::Formatter;
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
@@ -21,16 +19,12 @@ use cli::Cli;
 use tracker::IndexTracker;
 
 use colored::*;
+use thiserror::Error;
 
-#[derive(Debug)]
-struct LittError(String);
-
-impl fmt::Display for LittError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self {
-            LittError(s) => write!(f, "{}", s.red()),
-        }
-    }
+#[derive(Debug, Error)]
+enum LittError {
+    #[error("Error:`{0}`")]
+    General(String),
 }
 
 fn get_first_term(query: &str) -> String {
@@ -76,13 +70,13 @@ fn open_std_programm(path: String) -> Result<(), LittError> {
     std::process::Command::new("open")
         .arg(&path)
         .spawn()
-        .map_err(|e| LittError(e.to_string()))?;
+        .map_err(|e| LittError::General(e.to_string()))?;
 
     #[cfg(target_os = "linux")]
     std::process::Command::new("xdg-open")
         .arg(&path)
         .spawn()
-        .map_err(|e| LittError(e.to_string()))?;
+        .map_err(|e| LittError::General(e.to_string()))?;
 
     #[cfg(windows)]
     std::process::Command::new("cmd")
@@ -90,7 +84,7 @@ fn open_std_programm(path: String) -> Result<(), LittError> {
         .arg("start")
         .arg(&path)
         .spawn()
-        .map_err(|e| LittError(e.to_string()))?;
+        .map_err(|e| LittError::General(e.to_string()))?;
 
     Ok(())
 }
@@ -98,7 +92,7 @@ fn open_std_programm(path: String) -> Result<(), LittError> {
 fn main() -> Result<(), LittError> {
     let mut index_tracker = match IndexTracker::create(".litt".into()) {
         Ok(index_tracker) => index_tracker,
-        Err(e) => return Err(LittError(e.to_string())),
+        Err(e) => return Err(LittError::General(e.to_string())),
     };
 
     // Check for fast last-number access
@@ -108,7 +102,7 @@ fn main() -> Result<(), LittError> {
         if let Ok(last_result) = &first_arg.trim().parse::<u32>() {
             let fast_results = match index_tracker.load_fast_results() {
                 Ok(fast_results) => fast_results,
-                Err(e) => return Err(LittError(e.to_string())),
+                Err(e) => return Err(LittError::General(e.to_string())),
             };
             let path = fast_results
                 .get(last_result)
@@ -135,7 +129,7 @@ fn main() -> Result<(), LittError> {
                     println!(" - {:?}", index);
                 }
             }
-            Err(e) => return Err(LittError(e.to_string())),
+            Err(e) => return Err(LittError::General(e.to_string())),
         }
         return Ok(());
     }
@@ -145,15 +139,15 @@ fn main() -> Result<(), LittError> {
         None => {
             Cli::command()
                 .print_help()
-                .map_err(|e| LittError(e.to_string()))?;
-            return Err(LittError("Litt index missing!".into()));
+                .map_err(|e| LittError::General(e.to_string()))?;
+            return Err(LittError::General("Litt index missing!".into()));
         }
         Some(index_name) => index_name,
     };
 
     // initialize new index
     if !cli.init.is_empty() {
-        let current_dir = env::current_dir().map_err(|e| LittError(e.to_string()))?;
+        let current_dir = env::current_dir().map_err(|e| LittError::General(e.to_string()))?;
         let path = current_dir.join(cli.init);
         println!(
             "Creating new index \"{}\" at: {}: ",
@@ -161,7 +155,7 @@ fn main() -> Result<(), LittError> {
             path.to_string_lossy()
         );
         if index_tracker.exists(&index_name) || index_tracker.path_exists(&path).is_some() {
-            return Err(LittError(format!(
+            return Err(LittError::General(format!(
                 "Failed to create index since it already exists: name: {}, path: {}",
                 index_tracker.get_name(&path).unwrap_or_default(),
                 path.to_string_lossy()
@@ -171,20 +165,25 @@ fn main() -> Result<(), LittError> {
         // failiure)
         let start = Instant::now();
         if let Err(e) = index_tracker.add(index_name, path.clone()) {
-            return Err(LittError(e.to_string()));
+            return Err(LittError::General(e.to_string()));
         }
 
         let mut index = match Index::create(&path, SearchSchema::default()) {
             Ok(index) => index,
-            Err(e) => return Err(LittError(e.to_string())),
+            Err(e) => return Err(LittError::General(e.to_string())),
         };
 
-        if let Err(e) = index.add_all_documents() {
-            return Err(LittError(e.to_string()));
-        }
+        index = match index.add_all_documents() {
+            Ok(index_with_documents) => index_with_documents,
+            Err(e) => return Err(LittError::General(e.to_string())),
+        };
+
+        let searcher = index
+            .searcher()
+            .map_err(|e| LittError::General(e.to_string()))?;
         println!(
             "Successfully indexed {} document pages in {:?}",
-            index.searcher().num_docs(),
+            searcher.num_docs(),
             start.elapsed()
         );
         return Ok(());
@@ -194,13 +193,13 @@ fn main() -> Result<(), LittError> {
         // remove litt directory at index path
         let path = match index_tracker.get_path(&index_name) {
             Ok(path) => path,
-            Err(e) => return Err(LittError(e.to_string())),
+            Err(e) => return Err(LittError::General(e.to_string())),
         };
         let index_path = path.join(LITT_DIRECTORY_NAME);
         fs::remove_dir_all(index_path).expect("Could not remove index-file");
         // remove litt-index from tracker.
         if let Err(e) = index_tracker.remove(index_name.clone()) {
-            return Err(LittError(e.to_string()));
+            return Err(LittError::General(e.to_string()));
         }
         println!("Deleted index \"{}\".", index_name);
         return Ok(());
@@ -209,47 +208,54 @@ fn main() -> Result<(), LittError> {
     // get index:
     let index_path = index_tracker
         .get_path(&index_name)
-        .map_err(|e| LittError(e.to_string()))?;
-    let mut index = match Index::open_or_create(index_path.clone(), SearchSchema::default()) {
+        .map_err(|e| LittError::General(e.to_string()))?;
+    let index = match Index::open(index_path.clone(), SearchSchema::default()) {
         Ok(index) => index,
-        Err(e) => return Err(LittError(e.to_string())),
+        Err(e) => return Err(LittError::General(e.to_string())),
     };
+    let searcher = index
+        .searcher()
+        .map_err(|e| LittError::General(e.to_string()))?;
 
     // update existing index
     if cli.update {
         println!("Updating index \"{}\".", index_name);
-        let old_num_docs = index.searcher().num_docs();
+        let old_num_docs = searcher.num_docs();
         let start = Instant::now();
-        if let Err(e) = index.add_all_documents() {
-            return Err(LittError(e.to_string()));
-        }
-        println!(
-            "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
-            index.searcher().num_docs()-old_num_docs,
-            start.elapsed(),
-            index.searcher().num_docs(),
-        );
-        return Ok(());
+        return match index.update() {
+            Ok(_) => {
+                println!(
+                    "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
+                    searcher
+                        .num_docs()-old_num_docs,
+                    start.elapsed(),
+                    searcher
+                        .num_docs(),
+                );
+                Ok(())
+            }
+            Err(e) => Err(LittError::General(e.to_string())),
+        };
     }
     // reload existing index
     if cli.reload {
         println!("Reloading index \"{}\".", index_name);
-        let old_num_docs = index.searcher().num_docs();
+        let old_num_docs = searcher.num_docs();
         let start = Instant::now();
         if let Err(e) = index.reload() {
-            return Err(LittError(e.to_string()));
+            return Err(LittError::General(e.to_string()));
         }
         println!(
             "Reload done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
-            index.searcher().num_docs()-old_num_docs,
+            searcher.num_docs()-old_num_docs,
             start.elapsed(),
-            index.searcher().num_docs(),
+            searcher.num_docs(),
         );
         return Ok(());
     }
     // do normal search
     else if !cli.term.is_empty() {
-        let num_docs = &index.searcher().num_docs();
+        let num_docs = searcher.num_docs();
         println!(
             "Search index \"{}\" ({}) for {}",
             index_name,
@@ -265,7 +271,7 @@ fn main() -> Result<(), LittError> {
         };
         let results = match search.search(&search_term, cli.offset, cli.limit) {
             Ok(results) => results,
-            Err(e) => return Err(LittError(e.to_string())),
+            Err(e) => return Err(LittError::General(e.to_string())),
         };
         println!("Found results in {} document(s):", results.len());
         let mut fast_store_results: HashMap<u32, (String, u32, String)> = HashMap::new();
@@ -292,7 +298,7 @@ fn main() -> Result<(), LittError> {
                 );
                 let preview = match search.get_preview(page, &search_term) {
                     Ok(preview) => preview,
-                    Err(e) => return Err(LittError(e.to_string())),
+                    Err(e) => return Err(LittError::General(e.to_string())),
                 };
                 println!(
                     "  - [{}] p.{}: \"{}\", (score: {})",
@@ -305,7 +311,7 @@ fn main() -> Result<(), LittError> {
             }
         }
         if let Err(e) = index_tracker.store_fast_results(fast_store_results) {
-            return Err(LittError(e.to_string()));
+            return Err(LittError::General(e.to_string()));
         }
         println!(
             "{} results from {} pages in {:?}.",

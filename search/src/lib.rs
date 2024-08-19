@@ -1,21 +1,13 @@
-use std::fmt;
-use std::fmt::Formatter;
+use thiserror::Error;
 
 pub mod search;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum LittSearchError {
+    #[error("Error initializing new search: `{0}`")]
     InitError(String),
+    #[error("Error during search: `{0}`")]
     SearchError(String),
-}
-
-impl fmt::Display for LittSearchError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self {
-            LittSearchError::InitError(s) => write!(f, "Error initializing new search: {}", s),
-            LittSearchError::SearchError(s) => write!(f, "Error during search: {}", s),
-        }
-    }
 }
 
 pub type Result<T> = std::result::Result<T, LittSearchError>;
