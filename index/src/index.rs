@@ -12,6 +12,7 @@ use std::fs::{create_dir_all, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Schema, TantivyDocument};
@@ -38,6 +39,7 @@ pub enum Index {
         schema: SearchSchema,
         reader: IndexReader,
         documents_path: PathBuf,
+        failed_documents: Vec<String>,
     },
 }
 
@@ -70,6 +72,7 @@ impl Index {
             schema,
             reader,
             documents_path,
+            failed_documents: vec![],
         })
     }
 
@@ -100,16 +103,23 @@ impl Index {
         let checksum_map = self.open_checksum_map().ok();
         let dir_entries = self.collect_document_files();
 
-        let new_checksum_map_result: Result<HashMap<_, _>> = dir_entries
+        let failed_documents: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+
+        let new_checksum_map: HashMap<_, _> = dir_entries
             .par_iter()
-            .map(|path| {
+            .filter_map(|path| {
                 let key = path.path().to_string_lossy().to_string();
                 let existing_checksum = checksum_map.as_ref().and_then(|map| map.get(&key));
-                self.process_file(path, existing_checksum)
+                match self.process_file(path, existing_checksum) {
+                    Ok(success) => Some(success),
+                    Err(e) => failed_documents.lock().ok().and_then(|mut failed_files| {
+                        failed_files.push(format!("path: {}, error: {}", path.path().display(), e));
+                        None
+                    }),
+                }
             })
             .collect();
 
-        let new_checksum_map = new_checksum_map_result?;
         self.store_checksum_map(new_checksum_map)?;
 
         // We need to call .commit() explicitly to force the
@@ -131,6 +141,10 @@ impl Index {
                 schema,
                 reader,
                 documents_path,
+                failed_documents: failed_documents
+                    .lock()
+                    .map_err(|e| WriteError(e.to_string()))?
+                    .to_vec(),
             };
             Ok(self)
         } else {
@@ -154,6 +168,17 @@ impl Index {
                 writer,
             };
             self.add_all_documents()
+        } else {
+            Err(StateError("Reading".to_string()))
+        }
+    }
+
+    pub fn failed_documents(&self) -> Result<Vec<String>> {
+        if let Index::Reading {
+            failed_documents, ..
+        } = self
+        {
+            Ok(failed_documents.to_vec())
         } else {
             Err(StateError("Reading".to_string()))
         }
@@ -424,6 +449,7 @@ impl Index {
         }
     }
 
+    /// Calculates the checksum of a file that consists of the metadata length and last modified time
     fn calculate_checksum(path: &str) -> Result<(String, (u64, SystemTime))> {
         let file = File::open(path).map_err(|e| CreationError(e.to_string()))?;
         let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
