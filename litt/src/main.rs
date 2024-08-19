@@ -43,7 +43,7 @@ fn open_pdf(path: String, page: u32, term: String) -> Result<(), LittError> {
     let mut cmd = std::process::Command::new("zathura");
     cmd.arg(&path)
         .arg("-P")
-        .arg(&page.to_string())
+        .arg(page.to_string())
         .arg("-f")
         .arg(&term);
 
