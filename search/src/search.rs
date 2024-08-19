@@ -286,9 +286,8 @@ mod tests {
         // one-word search returning 1 result with 1 page
         for (search_term, pages) in &test_cases {
             println!("- [fuzzy] searching {}.", search_term);
-            let results = search
-                .search(&SearchTerm::Fuzzy(search_term.to_string(), 2), 0, 10)
-                .unwrap();
+            let t_search_term = &SearchTerm::Fuzzy(search_term.to_string(), 2);
+            let results = search .search(t_search_term, 0, 10) .unwrap();
             if !pages.is_empty() {
                 assert!(results.contains_key(TEST_DOC_NAME));
                 let doc_results = results.get(TEST_DOC_NAME).unwrap();
@@ -299,6 +298,17 @@ mod tests {
             } else {
                 assert!(!results.contains_key(TEST_DOC_NAME));
             }
+            for (_, pages) in &results {
+                for page in pages {
+                    let preview = match search.get_preview(page, &t_search_term) {
+                        Ok(preview) => preview,
+                        Err(_) => "".to_string(),
+                    };
+                    println!("{}", preview);
+                    assert!(preview.contains(search_term));
+                }
+            }
+
         }
     }
 

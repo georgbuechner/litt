@@ -6,6 +6,7 @@ use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
 use rayon::prelude::*;
+use regex::Regex;
 use std::collections::HashMap;
 use std::convert::AsRef;
 use std::fs::{create_dir_all, File};
@@ -473,6 +474,21 @@ impl Index {
             Ok(false)
         }
     }
+
+    
+    fn split_text_into_words(text: &str) -> Vec<String> {
+        // Define a regular expression to remove all non-alphanumeric characters except spaces
+        let re = Regex::new(r"[^\w\s]").unwrap();
+        
+        // Remove newlines and special characters from the text
+        let cleaned_text = re.replace_all(text, "");
+        
+        // Split the cleaned text into words and collect them into a vector
+        cleaned_text
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -546,4 +562,13 @@ mod tests {
                 .is_dir())
         });
     }
+
+    #[test]
+    #[serial]
+    fn test_split_text_into_words() {
+        run_test(|| {
+
+        });
+    }
+
 }
