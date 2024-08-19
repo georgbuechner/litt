@@ -44,6 +44,8 @@ pub enum Index {
     },
 }
 
+pub type PageIndex = HashMap<String, (u32, u32)>;
+
 impl Index {
     pub fn create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
         let documents_path = PathBuf::from(path.as_ref());
@@ -250,6 +252,10 @@ impl Index {
         } else {
             Err(StateError("Reading".to_string()))
         }
+    }
+
+    pub fn page_index(&self, uuid: Uuid) -> Result<PageIndex> {
+        todo!()
     }
 
     fn create_index(path: &PathBuf, schema: Schema) -> Result<TantivyIndex> {
@@ -475,14 +481,13 @@ impl Index {
         }
     }
 
-    
     fn split_text_into_words(text: &str) -> Vec<String> {
         // Define a regular expression to remove all non-alphanumeric characters except spaces
         let re = Regex::new(r"[^\w\s]").unwrap();
-        
+
         // Remove newlines and special characters from the text
         let cleaned_text = re.replace_all(text, "");
-        
+
         // Split the cleaned text into words and collect them into a vector
         cleaned_text
             .split_whitespace()
@@ -564,11 +569,9 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_split_text_into_words() {
-        run_test(|| {
-
-        });
+        let text = "Hello*&%&^%, beautiful\n\rWörld!";
+        let result = Index::split_text_into_words(text);
+        assert_eq!(vec!["Hello", "beautiful", "Wörld"], result);
     }
-
 }
