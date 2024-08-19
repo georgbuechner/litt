@@ -89,6 +89,17 @@ fn open_std_programm(path: String) -> Result<(), LittError> {
     Ok(())
 }
 
+fn show_failed_documents_error(index: &Index) {
+    let failed_documents: Vec<String> = index.failed_documents().unwrap_or_default();
+    if !failed_documents.is_empty() {
+        let error_message = format!(
+            "The following documents failed to process:\n{}",
+            failed_documents.join("\n")
+        );
+        println!("{}", error_message);
+    }
+}
+
 fn main() -> Result<(), LittError> {
     let mut index_tracker = match IndexTracker::create(".litt".into()) {
         Ok(index_tracker) => index_tracker,
@@ -186,6 +197,7 @@ fn main() -> Result<(), LittError> {
             searcher.num_docs(),
             start.elapsed()
         );
+        show_failed_documents_error(&index);
         return Ok(());
     }
 
@@ -223,7 +235,7 @@ fn main() -> Result<(), LittError> {
         let old_num_docs = searcher.num_docs();
         let start = Instant::now();
         return match index.update() {
-            Ok(_) => {
+            Ok(ref updated_index) => {
                 println!(
                     "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
                     searcher
@@ -232,6 +244,7 @@ fn main() -> Result<(), LittError> {
                     searcher
                         .num_docs(),
                 );
+                show_failed_documents_error(updated_index);
                 Ok(())
             }
             Err(e) => Err(LittError::General(e.to_string())),
@@ -242,16 +255,21 @@ fn main() -> Result<(), LittError> {
         println!("Reloading index \"{}\".", index_name);
         let old_num_docs = searcher.num_docs();
         let start = Instant::now();
-        if let Err(e) = index.reload() {
-            return Err(LittError::General(e.to_string()));
+        match index.reload() {
+            Ok(index) => {
+                println!(
+                    "Reload done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
+                    searcher.num_docs()-old_num_docs,
+                    start.elapsed(),
+                    searcher.num_docs(),
+                );
+                show_failed_documents_error(&index);
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(LittError::General(e.to_string()));
+            }
         }
-        println!(
-            "Reload done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
-            searcher.num_docs()-old_num_docs,
-            start.elapsed(),
-            searcher.num_docs(),
-        );
-        return Ok(());
     }
     // do normal search
     else if !cli.term.is_empty() {
