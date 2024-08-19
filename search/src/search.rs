@@ -11,6 +11,8 @@ use litt_shared::search_schema::SearchSchema;
 use crate::LittSearchError::SearchError;
 use crate::Result;
 
+use levenshtein::levenshtein;
+
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct SearchResult {
@@ -134,17 +136,6 @@ impl Search {
             .index
             .searcher()
             .map_err(|e| SearchError(e.to_string()))?;
-        let (query_parser, term) = match search_term {
-            SearchTerm::Fuzzy(_, _) => return Ok("[fuzzy match] No preview. We're sry.".into()),
-            SearchTerm::Exact(term) => (self.index.query_parser(), term),
-        };
-        let query = query_parser
-            .map_err(|e| SearchError(e.to_string()))?
-            .parse_query(term)
-            .map_err(|e| SearchError(e.to_string()))?;
-        let mut snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
-            .map_err(|e| SearchError(e.to_string()))?;
-        snippet_generator.set_max_num_chars(70);
         let retrieved_doc: TantivyDocument = searcher
             .doc(DocAddress {
                 segment_ord: (search_result.segment_ord),
@@ -164,10 +155,65 @@ impl Search {
             )))?;
         let text = fs::read_to_string(path).map_err(|e| SearchError(e.to_string()))?;
 
-        // Generate snippet
+        let _ = match search_term {
+            SearchTerm::Fuzzy(term, distance) =>
+                return self.get_fuzzy_preview(term, distance, text),
+            SearchTerm::Exact(term) =>
+                return self.get_preview_from_query(term, text)
+        };
+    }
+
+    fn get_preview_from_query(&self, term: &str, text: String) -> Result<String> {
+        let searcher = self
+            .index
+            .searcher()
+            .map_err(|e| SearchError(e.to_string()))?;
+        let query = self.index.query_parser()
+            .map_err(|e| SearchError(e.to_string()))?
+            .parse_query(term)
+            .map_err(|e| SearchError(e.to_string()))?;
+        let mut snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
+            .map_err(|e| SearchError(e.to_string()))?;
+        snippet_generator.set_max_num_chars(70);
+
         let snippet = snippet_generator.snippet(&text);
         // let snippet = snippet_generator.snippet_from_doc(&retrieved_doc);
         Ok(self.highlight(snippet))
+    }
+
+    fn get_fuzzy_preview(&self, term: &str, distance: &u8, body: String) -> Result<String> {
+        let pindex: HashMap<&str, Vec<(u32, u32)>> = HashMap::from([
+            ("flooding", vec![(2, 10)])
+        ]);
+        let (matched_term, start, end) = self.get_fuzzy_match(term, distance, pindex);
+        // Another safe way to get substrings using char_indices
+        let start = body.char_indices().nth(start as usize).unwrap_or((0, ' ')).0;
+        let end = body.char_indices().nth(end as usize).unwrap_or((body.len()-1, ' ')).0;
+        let substring = &body[start..end];
+        Ok(substring.to_string().replace(&matched_term, &format!("**{}**", term)))
+    }
+
+    fn get_fuzzy_match(&self, term: &str, distance: &u8, pindex: HashMap<&str, Vec<(u32, u32)>>) -> (String, u32, u32) {
+        if pindex.contains_key(term) {
+            let (start, end) = pindex.get(term).unwrap().first().unwrap();
+            return (term.to_string(), *start, *end);
+        } else {
+            let mut cur: (String, u32, u32) = ("".to_string(), 0, 0);
+            let mut min_dist: usize = usize::MAX;
+            for (word, matches) in pindex {
+                let dist: usize = levenshtein(term, word); 
+                if dist < min_dist {
+                    min_dist = dist; 
+                    let (start, end) = matches.first().unwrap_or(&(0, 0));
+                    cur = (word.to_string(), *start, *end)
+                }
+            }
+            if min_dist as u8 <= *distance {
+                return cur;
+            } else {
+                return ("".to_string(), 0, 0)
+            }
+        }
     }
 
     fn highlight(&self, snippet: Snippet) -> String {
