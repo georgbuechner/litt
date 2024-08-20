@@ -6,10 +6,9 @@ use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
 use rayon::prelude::*;
-use regex::Regex;
 use std::collections::HashMap;
 use std::convert::AsRef;
-use std::fs::{create_dir_all, File};
+use std::fs::{self, create_dir_all, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,6 +17,7 @@ use std::time::SystemTime;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Schema, TantivyDocument};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
+use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 
@@ -44,7 +44,7 @@ pub enum Index {
     },
 }
 
-pub type PageIndex = HashMap<String, (u32, u32)>;
+pub type PageIndex = HashMap<String, Vec<(u32, u32)>>;
 
 impl Index {
     pub fn create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
@@ -254,8 +254,14 @@ impl Index {
         }
     }
 
-    pub fn page_index(&self, uuid: Uuid) -> Result<PageIndex> {
-        todo!()
+    pub fn page_index(&self, path: &str) -> Result<PageIndex> {
+        let mut path = PathBuf::from(path);
+        path.set_extension("pageindex");
+        let data_str = fs::read_to_string(path.to_string_lossy().to_string())
+            .map_err(|e| CreationError(e.to_string()))?;
+        let fast_results: PageIndex =
+            serde_json::from_str(&data_str).map_err(|e| CreationError(e.to_string()))?;
+        Ok(fast_results)
     }
 
     fn create_index(path: &PathBuf, schema: Schema) -> Result<TantivyIndex> {
@@ -364,6 +370,7 @@ impl Index {
                 let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
                 self.add_page(dir_entry.path(), page_number, &page_path, &page_body)?;
+                Self::create_page_index(&mut page_path.clone(), &page_body)?;
             }
         }
 
@@ -392,6 +399,7 @@ impl Index {
             .map_err(|e| TxtParseError(e.to_string() + full_path.to_string_lossy().as_ref()))?;
         // Finally, add page
         self.add_page(dir_entry.path(), page_number, &page_path, &body)?;
+        Self::create_page_index(&mut page_path.clone(), &body)?;
         Ok(page_number)
     }
 
@@ -481,18 +489,38 @@ impl Index {
         }
     }
 
-    fn split_text_into_words(text: &str) -> Vec<String> {
-        // Define a regular expression to remove all non-alphanumeric characters except spaces
-        let re = Regex::new(r"[^\w\s]").unwrap();
+    fn create_page_index(path: &mut PathBuf, body: &str) -> Result<()> {
+        // Create reversed index map
+        let pindex: PageIndex = Self::split_text_into_words(body)?;
+        path.set_extension("pageindex");
+        let json_str = serde_json::to_string(&pindex).map_err(|e| CreationError(e.to_string()))?;
+        std::fs::write(path, json_str).map_err(|e| CreationError(e.to_string()))?;
+        Ok(())
+    }
 
-        // Remove newlines and special characters from the text
-        let cleaned_text = re.replace_all(text, "");
-
-        // Split the cleaned text into words and collect them into a vector
-        cleaned_text
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect()
+    fn split_text_into_words(body: &str) -> Result<PageIndex> {
+        let mut pindex: PageIndex = HashMap::new();
+        let mut i = 0;
+        let graphemes: Vec<&str> = body.graphemes(true).collect();
+        while i < graphemes.len() {
+            let mut buffer: String = "".to_string();
+            let mut j = i;
+            while j < graphemes.len() {
+                if graphemes[j].chars().all(|c| c.is_alphanumeric()) {
+                    buffer += graphemes[j];
+                } else {
+                    pindex
+                        .entry(buffer.clone())
+                        .or_default()
+                        .push((i as u32, j as u32));
+                    i = j;
+                    break;
+                }
+                j += 1;
+            }
+            i += 1;
+        }
+        Ok(pindex)
     }
 }
 
@@ -571,7 +599,9 @@ mod tests {
     #[test]
     fn test_split_text_into_words() {
         let text = "Hello*&%&^%, beautiful\n\rWörld!";
-        let result = Index::split_text_into_words(text);
-        assert_eq!(vec!["Hello", "beautiful", "Wörld"], result);
+        let result = Index::split_text_into_words(text).unwrap_or_default();
+        assert!(result.contains_key("Hello"));
+        assert!(result.contains_key("beautiful"));
+        assert!(result.contains_key("Wörld"));
     }
 }
