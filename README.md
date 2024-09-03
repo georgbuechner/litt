@@ -146,6 +146,23 @@ Use `litt <num>` to open a document (num refers to the number in brackets, f.e.
 
 ![simple example](images/simple_example.png)
 
+**NOTE (open on wrong page):** Possibly zathura (or whatever pdf-reader you're using) will open a
+result on the correct page, but then search for the term and (mostly in the case
+of fuzzy matching) not find the term on that page but on another. In this case
+it might apear like zathura sent you to the wrong page or no result was found on
+the page you wanted to open. For zathura: simply enter `:<page-num>` to go the
+the page the result was found. Possibly the searched term was not found by
+zathura since it breaks line, e.i: 
+``` 
+my- 
+stifiziert 
+``` 
+Try to search for a substring to then find the term on the page. 
+```
+/my 
+```
+
+
 ### Exact matching 
 You can search for multiple words, the following will give the same result
 ```
