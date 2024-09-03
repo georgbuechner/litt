@@ -27,18 +27,6 @@ enum LittError {
     General(String),
 }
 
-fn get_first_term(query: &str) -> String {
-    let parts = query.split(' ').collect::<Vec<_>>();
-    if let Some(first_str) = parts.first() {
-        if let Some(stripped) = first_str.strip_prefix('\"') {
-            return stripped.to_string();
-        }
-        first_str.to_string()
-    } else {
-        "".to_string()
-    }
-}
-
 fn open_pdf(path: String, page: u32, term: String) -> Result<(), LittError> {
     let mut cmd = std::process::Command::new("zathura");
     cmd.arg(&path)
@@ -293,7 +281,6 @@ fn main() -> Result<(), LittError> {
         };
         println!("Found results in {} document(s):", results.len());
         let mut fast_store_results: HashMap<u32, (String, u32, String)> = HashMap::new();
-        let first_query_term = get_first_term(&cli.term);
         let mut counter = 0;
         let mut res_counter = 1;
         for (title, pages) in &results {
@@ -306,18 +293,18 @@ fn main() -> Result<(), LittError> {
             let index_path = index_path.join(title);
             println!("   ({})", index_path.to_string_lossy().italic());
             for page in pages {
+                let (preview, matched_term) = match search.get_preview(page, &search_term) {
+                    Ok(preview) => preview,
+                    Err(e) => return Err(LittError::General(e.to_string())),
+                };
                 fast_store_results.insert(
                     res_counter,
                     (
                         index_path.to_string_lossy().to_string(),
                         page.page,
-                        first_query_term.clone(),
+                        matched_term,
                     ),
                 );
-                let preview = match search.get_preview(page, &search_term) {
-                    Ok(preview) => preview,
-                    Err(e) => return Err(LittError::General(e.to_string())),
-                };
                 println!(
                     "  - [{}] p.{}: \"{}\", (score: {})",
                     res_counter,
