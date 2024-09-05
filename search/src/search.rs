@@ -172,7 +172,9 @@ impl Search {
         match search_term {
             SearchTerm::Fuzzy(term, distance) => {
                 for t in term.split(" ").collect::<Vec<&str>>() {
-                    if let Ok((prev, matched_term)) = self.get_fuzzy_preview(path, t, distance, &text) {
+                    if let Ok((prev, matched_term)) =
+                        self.get_fuzzy_preview(path, t, distance, &text)
+                    {
                         return Ok((prev, matched_term.to_string()));
                     }
                 }
@@ -180,7 +182,7 @@ impl Search {
                                                                           // that zathura does not
                                                                           // search
             }
-            SearchTerm::Exact(term) => self.get_preview_from_query(term, text)
+            SearchTerm::Exact(term) => self.get_preview_from_query(term, text),
         }
     }
 
@@ -281,7 +283,6 @@ impl Search {
         result.push_str(&snippet.fragment()[start_from..]);
         result.replace('\n', " ")
     }
-
 }
 
 #[cfg(test)]
@@ -382,8 +383,11 @@ mod tests {
             ("Soledad", vec![(1, "Salinas")]),
             ("Soledud", vec![(1, "River")]),
             ("Soledud Salinos", vec![(1, "the")]), // actual fuzzy
-                                                   // ("Sole AND Sali", vec![1]), // Does not work: searching for ['sole' 'and', 'sali']
-            ("mystifiziert", vec![(1, "Mystifizierung"), (2, "No preview")]),
+            // ("Sole AND Sali", vec![1]), // Does not work: searching for ['sole' 'and', 'sali']
+            (
+                "mystifiziert",
+                vec![(1, "Mystifizierung"), (2, "No preview")],
+            ),
         ]);
         // one-word search returning 1 result with 1 page
         for (search_term, pages) in &test_cases {
