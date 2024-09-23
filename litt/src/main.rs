@@ -73,24 +73,17 @@ Using standard system PDF viewer... {}",
 
 fn open_std_programm(path: String) -> Result<(), LittError> {
     #[cfg(target_os = "macos")]
-    std::process::Command::new("open")
-        .arg(&path)
-        .spawn()
-        .map_err(|e| LittError::General(e.to_string()))?;
+    std::process::Command::new("open").arg(&path).spawn()?;
 
     #[cfg(target_os = "linux")]
-    std::process::Command::new("xdg-open")
-        .arg(&path)
-        .spawn()
-        .map_err(|e| LittError::General(e.to_string()))?;
+    std::process::Command::new("xdg-open").arg(&path).spawn()?;
 
     #[cfg(windows)]
     std::process::Command::new("cmd")
         .arg("/c")
         .arg("start")
         .arg(&path)
-        .spawn()
-        .map_err(|e| LittError::General(e.to_string()))?;
+        .spawn()?;
 
     Ok(())
 }
@@ -154,9 +147,7 @@ fn main() -> Result<(), LittError> {
     // check if name of litt index was given by user
     let index_name = match cli.litt_index {
         None => {
-            Cli::command()
-                .print_help()
-                .map_err(|e| LittError::General(e.to_string()))?;
+            Cli::command().print_help()?;
             return Err(LittError::General("Litt index missing!".into()));
         }
         Some(index_name) => index_name,
@@ -164,7 +155,7 @@ fn main() -> Result<(), LittError> {
 
     // initialize new index
     if !cli.init.is_empty() {
-        let current_dir = env::current_dir().map_err(|e| LittError::General(e.to_string()))?;
+        let current_dir = env::current_dir()?;
         let path = current_dir.join(cli.init);
         println!(
             "Creating new index \"{}\" at: {}: ",
@@ -195,9 +186,7 @@ fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError::General(e.to_string())),
         };
 
-        let searcher = index
-            .searcher()
-            .map_err(|e| LittError::General(e.to_string()))?;
+        let searcher = index.searcher()?;
         println!(
             "Successfully indexed {} document pages in {:?}",
             searcher.num_docs(),
@@ -224,16 +213,12 @@ fn main() -> Result<(), LittError> {
     }
 
     // get index:
-    let index_path = index_tracker
-        .get_path(&index_name)
-        .map_err(|e| LittError::General(e.to_string()))?;
+    let index_path = index_tracker.get_path(&index_name)?;
     let index = match Index::open(index_path.clone(), SearchSchema::default()) {
         Ok(index) => index,
         Err(e) => return Err(LittError::General(e.to_string())),
     };
-    let searcher = index
-        .searcher()
-        .map_err(|e| LittError::General(e.to_string()))?;
+    let searcher = index.searcher()?;
 
     // update existing index
     if cli.update {
