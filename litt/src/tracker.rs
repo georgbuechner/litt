@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 use thiserror::Error;
 
 use litt_shared::LITT_DIRECTORY_NAME;
@@ -16,6 +16,10 @@ pub enum LittIndexTrackerError {
     NotFound(String),
     #[error("The index-config could not be stored: `{0}`")]
     SaveError(String),
+    #[error(transparent)]
+    IoError(#[from] io::Error),
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::error::Error),
 }
 
 pub type Result<T> = std::result::Result<T, LittIndexTrackerError>;

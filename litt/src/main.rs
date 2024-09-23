@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::env;
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
+use std::{env, io};
 
 use clap::CommandFactory;
 use clap::Parser;
@@ -25,6 +25,12 @@ use thiserror::Error;
 enum LittError {
     #[error("Error:`{0}`")]
     General(String),
+    #[error(transparent)]
+    IoError(#[from] io::Error),
+    #[error(transparent)]
+    LittIndexError(#[from] litt_index::LittIndexError),
+    #[error(transparent)]
+    LittIndexTrackerError(#[from] tracker::LittIndexTrackerError),
 }
 
 fn get_first_term(query: &str) -> String {
