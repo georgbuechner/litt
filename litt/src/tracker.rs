@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 use thiserror::Error;
 
 use litt_shared::LITT_DIRECTORY_NAME;
@@ -10,12 +10,12 @@ const FAST_RESULTS_FILENAME: &str = "last_results.json";
 
 #[derive(Debug, Error)]
 pub enum LittIndexTrackerError {
-    #[error("Unknown error reading from index-config: `{0}`")]
-    UnknownError(String),
     #[error("The given index `{0}` does not exist")]
     NotFound(String),
-    #[error("The index-config could not be stored: `{0}`")]
-    SaveError(String),
+    #[error(transparent)]
+    IoError(#[from] io::Error),
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::error::Error),
 }
 
 pub type Result<T> = std::result::Result<T, LittIndexTrackerError>;
@@ -39,15 +39,12 @@ impl IndexTracker {
         // Check if stored litt indices json already exists
         if Path::new(&json_path).exists() {
             // load json
-            let data = fs::read_to_string(json_path)
-                .map_err(|e| LittIndexTrackerError::UnknownError(e.to_string()))?;
-            let indices: HashMap<String, PathBuf> = serde_json::from_str(&data)
-                .map_err(|e| LittIndexTrackerError::UnknownError(e.to_string()))?;
+            let data = fs::read_to_string(json_path)?;
+            let indices: HashMap<String, PathBuf> = serde_json::from_str(&data)?;
             Ok(Self { indices })
         // Otherwise create path first
         } else {
-            _ = fs::create_dir_all(litt_root)
-                .map_err(|e| LittIndexTrackerError::UnknownError(e.to_string()));
+            _ = fs::create_dir_all(litt_root);
             let indices = HashMap::new();
             Ok(Self { indices })
         }
@@ -104,10 +101,8 @@ impl IndexTracker {
             .join(LITT_DIRECTORY_NAME)
             .join(FAST_RESULTS_FILENAME);
         let json_path = shellexpand::tilde(&base_path.to_string_lossy().to_string()).to_string();
-        let json_str = serde_json::to_string(&fast_results)
-            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))?;
-        std::fs::write(json_path, json_str)
-            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
+        let json_str = serde_json::to_string(&fast_results)?;
+        std::fs::write(json_path, json_str).map_err(Into::into)
     }
 
     pub fn load_fast_results(&self) -> Result<HashMap<u32, (String, u32, String)>> {
@@ -116,10 +111,8 @@ impl IndexTracker {
             .join(LITT_DIRECTORY_NAME)
             .join(FAST_RESULTS_FILENAME);
         let json_path = shellexpand::tilde(&base_path.to_string_lossy().to_string()).to_string();
-        let data = fs::read_to_string(json_path)
-            .map_err(|e| LittIndexTrackerError::UnknownError(e.to_string()))?;
-        let fast_results: HashMap<u32, (String, u32, String)> = serde_json::from_str(&data)
-            .map_err(|e| LittIndexTrackerError::UnknownError(e.to_string()))?;
+        let data = fs::read_to_string(json_path)?;
+        let fast_results: HashMap<u32, (String, u32, String)> = serde_json::from_str(&data)?;
         Ok(fast_results)
     }
 
@@ -129,9 +122,7 @@ impl IndexTracker {
             .join(LITT_DIRECTORY_NAME)
             .join(INDICIES_FILENAME);
         let json_path = shellexpand::tilde(&base_path.to_string_lossy().to_string()).to_string();
-        let json_str = serde_json::to_string(&self.indices)
-            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))?;
-        std::fs::write(json_path, json_str)
-            .map_err(|e| LittIndexTrackerError::SaveError(e.to_string()))
+        let json_str = serde_json::to_string(&self.indices)?;
+        std::fs::write(json_path, json_str).map_err(Into::into)
     }
 }

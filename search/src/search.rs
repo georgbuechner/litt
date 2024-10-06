@@ -68,34 +68,19 @@ impl Search {
         offset: usize,
         limit: usize,
     ) -> Result<HashMap<String, LinkedList<SearchResult>>> {
-        let searcher = self
-            .index
-            .searcher()
-            .map_err(|e| SearchError(e.to_string()))?;
+        let searcher = self.index.searcher()?;
 
         let (query_parser, term) = match input {
             SearchTerm::Fuzzy(term, distance) => {
-                let mut query_parser = self
-                    .index
-                    .query_parser()
-                    .map_err(|e| SearchError(e.to_string()))?;
+                let mut query_parser = self.index.query_parser()?;
                 query_parser.set_field_fuzzy(self.schema.body, true, *distance, true);
                 (query_parser, term)
             }
-            SearchTerm::Exact(term) => (
-                self.index
-                    .query_parser()
-                    .map_err(|e| SearchError(e.to_string()))?,
-                term,
-            ),
+            SearchTerm::Exact(term) => (self.index.query_parser()?, term),
         };
 
-        let query = query_parser
-            .parse_query(term)
-            .map_err(|e| SearchError(e.to_string()))?;
-        let top_docs = searcher
-            .search(&query, &TopDocs::with_limit(limit).and_offset(offset))
-            .map_err(|e| SearchError(e.to_string()))?;
+        let query = query_parser.parse_query(term)?;
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(limit).and_offset(offset))?;
 
         // Assemble results
         let mut results: HashMap<String, LinkedList<SearchResult>> = HashMap::new();
@@ -104,9 +89,7 @@ impl Search {
             let segment_ord = doc_address.segment_ord;
             let doc_id = doc_address.doc_id;
             // Retrieve the actual content of documents given its `doc_address`.
-            let retrieved_doc: TantivyDocument = searcher
-                .doc(doc_address)
-                .map_err(|e| SearchError(e.to_string()))?;
+            let retrieved_doc: TantivyDocument = searcher.doc(doc_address)?;
             let cur_title = retrieved_doc
                 .get_first(self.schema.title)
                 .ok_or(SearchError(String::from(
@@ -146,16 +129,11 @@ impl Search {
         search_term: &SearchTerm,
     ) -> Result<(String, String)> {
         // Prepare creating snippet.
-        let searcher = self
-            .index
-            .searcher()
-            .map_err(|e| SearchError(e.to_string()))?;
-        let retrieved_doc: TantivyDocument = searcher
-            .doc(DocAddress {
-                segment_ord: (search_result.segment_ord),
-                doc_id: (search_result.doc_id),
-            })
-            .map_err(|e| SearchError(e.to_string()))?;
+        let searcher = self.index.searcher()?;
+        let retrieved_doc: TantivyDocument = searcher.doc(DocAddress {
+            segment_ord: (search_result.segment_ord),
+            doc_id: (search_result.doc_id),
+        })?;
 
         // Get text on given page
         let path = retrieved_doc
@@ -167,7 +145,7 @@ impl Search {
             .ok_or(SearchError(String::from(
                 "Fatal: Field \"path\" could not be read as text!",
             )))?;
-        let text = fs::read_to_string(path).map_err(|e| SearchError(e.to_string()))?;
+        let text = fs::read_to_string(path)?;
 
         match search_term {
             SearchTerm::Fuzzy(term, distance) => {
@@ -187,16 +165,8 @@ impl Search {
     }
 
     fn get_preview_from_query(&self, term: &str, text: String) -> Result<(String, String)> {
-        let searcher = self
-            .index
-            .searcher()
-            .map_err(|e| SearchError(e.to_string()))?;
-        let query = self
-            .index
-            .query_parser()
-            .map_err(|e| SearchError(e.to_string()))?
-            .parse_query(term)
-            .map_err(|e| SearchError(e.to_string()))?;
+        let searcher = self.index.searcher()?;
+        let query = self.index.query_parser()?.parse_query(term)?;
         let mut snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
             .map_err(|e| SearchError(e.to_string()))?;
         snippet_generator.set_max_num_chars(70);
@@ -251,7 +221,11 @@ impl Search {
             let mut cur: (String, u32, u32) = ("".to_string(), 0, 0);
             let mut min_dist: usize = usize::MAX;
             for (word, matches) in pindex {
-                let dist: usize = if word.contains(term) { 1 } else { levenshtein(term, &word)};
+                let dist: usize = if word.contains(term) {
+                    1
+                } else {
+                    levenshtein(term, &word)
+                };
                 println!("{} ~ {} = {}", term, word, dist);
                 if dist < min_dist {
                     min_dist = dist;
@@ -312,12 +286,8 @@ mod tests {
     fn create_searcher() -> Result<Search> {
         let search_schema = SearchSchema::default();
         let index = Index::open_or_create(TEST_DIR_NAME, search_schema.clone()).unwrap();
-        let readable_index = index
-            .add_all_documents()
-            .map_err(|e| SearchError(e.to_string()))?;
-        let searcher = readable_index
-            .searcher()
-            .map_err(|e| SearchError(e.to_string()))?;
+        let readable_index = index.add_all_documents()?;
+        let searcher = readable_index.searcher()?;
         println!("loaded {} document pages.", searcher.num_docs());
         Ok(Search::new(readable_index, search_schema))
     }

@@ -1,7 +1,4 @@
-use crate::LittIndexError::{
-    CreationError, OpenError, PdfParseError, ReloadError, StateError, TxtParseError, UpdateError,
-    WriteError,
-};
+use crate::LittIndexError::{PdfParseError, StateError};
 use crate::Result;
 use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
@@ -52,7 +49,7 @@ impl Index {
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
             .join(INDEX_DIRECTORY_NAME);
-        create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
+        create_dir_all(&index_path)?;
         let index = Self::create_index(&index_path, schema.schema.clone())?;
         let writer = Self::build_writer(&index)?;
         Ok(Self::Writing {
@@ -85,7 +82,7 @@ impl Index {
         let index_path = documents_path
             .join(LITT_DIRECTORY_NAME)
             .join(INDEX_DIRECTORY_NAME);
-        create_dir_all(&index_path).map_err(|e| CreationError(e.to_string()))?;
+        create_dir_all(&index_path)?;
         let index_create_result = Self::create_index(&index_path, schema.schema.clone());
         match index_create_result {
             Ok(index) => {
@@ -136,18 +133,15 @@ impl Index {
             mut writer,
         } = self
         {
-            writer.commit().map_err(|e| WriteError(e.to_string()))?;
+            writer.commit()?;
             let reader = Self::build_reader(&index)?;
-            reader.reload().map_err(|e| ReloadError(e.to_string()))?;
+            reader.reload()?;
             self = Index::Reading {
                 index,
                 schema,
                 reader,
                 documents_path,
-                failed_documents: failed_documents
-                    .lock()
-                    .map_err(|e| WriteError(e.to_string()))?
-                    .to_vec(),
+                failed_documents: failed_documents.lock()?.to_vec(),
             };
             Ok(self)
         } else {
@@ -163,7 +157,7 @@ impl Index {
             ..
         } = self
         {
-            let writer = Self::build_writer(&index).map_err(|e| UpdateError(e.to_string()))?;
+            let writer = Self::build_writer(&index)?;
             self = Index::Writing {
                 index,
                 schema,
@@ -193,10 +187,7 @@ impl Index {
         existing_checksum: Option<&(u64, SystemTime)>,
     ) -> Result<(String, (u64, SystemTime))> {
         if let Index::Writing { documents_path, .. } = &self {
-            let relative_path = path
-                .path()
-                .strip_prefix(documents_path)
-                .map_err(|e| CreationError(e.to_string()))?;
+            let relative_path = path.path().strip_prefix(documents_path)?;
 
             let str_path = path.path().to_string_lossy().to_string();
             if !Self::checksum_is_equal(&str_path, existing_checksum).unwrap_or(false) {
@@ -225,9 +216,7 @@ impl Index {
         } = self
         {
             let writer = Self::build_writer(index)?;
-            writer
-                .delete_all_documents()
-                .map_err(|e| UpdateError(e.to_string()))?;
+            writer.delete_all_documents()?;
             let checksum_map = PathBuf::from(documents_path)
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
@@ -257,19 +246,17 @@ impl Index {
     pub fn page_index(&self, path: &str) -> Result<PageIndex> {
         let mut path = PathBuf::from(path);
         path.set_extension("pageindex");
-        let data_str = fs::read_to_string(path.to_string_lossy().to_string())
-            .map_err(|e| CreationError(e.to_string()))?;
-        let fast_results: PageIndex =
-            serde_json::from_str(&data_str).map_err(|e| CreationError(e.to_string()))?;
+        let data_str = fs::read_to_string(path.to_string_lossy().to_string())?;
+        let fast_results: PageIndex = serde_json::from_str(&data_str)?;
         Ok(fast_results)
     }
 
     fn create_index(path: &PathBuf, schema: Schema) -> Result<TantivyIndex> {
-        TantivyIndex::create_in_dir(path, schema).map_err(|e| CreationError(e.to_string()))
+        TantivyIndex::create_in_dir(path, schema).map_err(Into::into)
     }
 
     fn open_tantivy_index(path: &PathBuf) -> Result<TantivyIndex> {
-        TantivyIndex::open_in_dir(path).map_err(|e| OpenError(e.to_string()))
+        TantivyIndex::open_in_dir(path).map_err(Into::into)
     }
 
     fn build_reader(index: &TantivyIndex) -> Result<IndexReader> {
@@ -277,13 +264,11 @@ impl Index {
             .reader_builder()
             .reload_policy(ReloadPolicy::Manual)
             .try_into()
-            .map_err(|e| CreationError(e.to_string()))
+            .map_err(Into::into)
     }
 
     fn build_writer(index: &TantivyIndex) -> Result<IndexWriter> {
-        index
-            .writer(TARGET_MEMORY_BYTES)
-            .map_err(|e| CreationError(e.to_string()))
+        index.writer(TARGET_MEMORY_BYTES).map_err(Into::into)
     }
 
     fn collect_document_files(&self) -> Vec<DirEntry> {
@@ -313,7 +298,7 @@ impl Index {
                 .join(LITT_DIRECTORY_NAME)
                 .join(PAGES_DIRECTORY_NAME)
                 .join(doc_id.to_string());
-            create_dir_all(&pages_path).map_err(|e| CreationError(e.to_string()))?;
+            create_dir_all(&pages_path)?;
             let full_path = dir_entry.path();
 
             // Check filetype (pdf/ txt)
@@ -367,8 +352,7 @@ impl Index {
 
             if pdf_to_text_successful {
                 // read page-body from generated .txt file
-                let page_body = std::fs::read_to_string(&page_path)
-                    .map_err(|e| PdfParseError(e.to_string()))?;
+                let page_body = std::fs::read_to_string(&page_path)?;
                 self.add_page(dir_entry.path(), page_number, &page_path, &page_body)?;
                 Self::store_page_index(&page_path.clone(), Self::create_page_index(&page_body)?)?;
             }
@@ -387,16 +371,14 @@ impl Index {
         let mut page_path = pages_path.join(page_number.to_string());
         page_path.set_extension("pageinfo");
         // Open the file in read-only mode
-        let mut file = File::open(full_path).map_err(|e| TxtParseError(e.to_string()))?;
+        let mut file = File::open(full_path)?;
         // Store as page seperatly
-        let mut destination_file =
-            File::create(page_path.clone()).map_err(|e| TxtParseError(e.to_string()))?;
-        io::copy(&mut file, &mut destination_file).map_err(|e| TxtParseError(e.to_string()))?;
+        let mut destination_file = File::create(page_path.clone())?;
+        io::copy(&mut file, &mut destination_file)?;
         // Read the contents of the file into a string
-        let mut file = File::open(full_path).map_err(|e| TxtParseError(e.to_string()))?;
+        let mut file = File::open(full_path)?;
         let mut body = String::new();
-        file.read_to_string(&mut body)
-            .map_err(|e| TxtParseError(e.to_string() + full_path.to_string_lossy().as_ref()))?;
+        file.read_to_string(&mut body)?;
         // Finally, add page
         self.add_page(dir_entry.path(), page_number, &page_path, &body)?;
         Self::store_page_index(&page_path.clone(), Self::create_page_index(&body)?)?;
@@ -417,9 +399,7 @@ impl Index {
             ..
         } = self
         {
-            let relative_path = full_path
-                .strip_prefix(documents_path)
-                .map_err(|e| CreationError(e.to_string()))?;
+            let relative_path = full_path.strip_prefix(documents_path)?;
             // documents_path base from path
             let mut tantivy_document = TantivyDocument::new();
 
@@ -428,9 +408,7 @@ impl Index {
             tantivy_document.add_text(schema.title, relative_path.to_string_lossy());
             tantivy_document.add_u64(schema.page, page_number);
             tantivy_document.add_text(schema.body, page_body);
-            writer
-                .add_document(tantivy_document)
-                .map_err(|e| WriteError(e.to_string()))?;
+            writer.add_document(tantivy_document)?;
             Ok(())
         } else {
             Err(StateError("Writing".to_string()))
@@ -442,8 +420,8 @@ impl Index {
             let path = documents_path
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
-            let data = std::fs::read_to_string(path).map_err(|e| CreationError(e.to_string()))?;
-            Ok(serde_json::from_str(&data).map_err(|e| CreationError(e.to_string()))?)
+            let data = std::fs::read_to_string(path)?;
+            Ok(serde_json::from_str(&data)?)
         } else {
             Err(StateError("Writing".to_string()))
         }
@@ -454,11 +432,7 @@ impl Index {
             let path = documents_path
                 .join(LITT_DIRECTORY_NAME)
                 .join(CHECK_SUM_MAP_FILENAME);
-            std::fs::write(
-                path,
-                serde_json::to_string(&checksum_map).map_err(|e| CreationError(e.to_string()))?,
-            )
-            .map_err(|e| CreationError(e.to_string()))
+            std::fs::write(path, serde_json::to_string(&checksum_map)?).map_err(Into::into)
         } else {
             Err(StateError("Writing".to_string()))
         }
@@ -466,11 +440,9 @@ impl Index {
 
     /// Calculates the checksum of a file that consists of the metadata length and last modified time
     fn calculate_checksum(path: &str) -> Result<(String, (u64, SystemTime))> {
-        let file = File::open(path).map_err(|e| CreationError(e.to_string()))?;
-        let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
-        let modified = metadata
-            .modified()
-            .map_err(|e| CreationError(e.to_string()))?;
+        let file = File::open(path)?;
+        let metadata = file.metadata()?;
+        let modified = metadata.modified()?;
 
         let result = (path.to_string(), (metadata.len(), modified));
         Ok(result)
@@ -478,11 +450,9 @@ impl Index {
 
     fn checksum_is_equal(path: &str, checksum: Option<&(u64, SystemTime)>) -> Result<bool> {
         if let Some((len, last_modified)) = checksum {
-            let file = File::open(path).map_err(|e| CreationError(e.to_string()))?;
-            let metadata = file.metadata().map_err(|e| CreationError(e.to_string()))?;
-            let modified = metadata
-                .modified()
-                .map_err(|e| CreationError(e.to_string()))?;
+            let file = File::open(path)?;
+            let metadata = file.metadata()?;
+            let modified = metadata.modified()?;
             Ok(*len == metadata.len() && *last_modified == modified)
         } else {
             Ok(false)
@@ -492,8 +462,8 @@ impl Index {
     fn store_page_index(path: &Path, pindex: PageIndex) -> Result<()> {
         // Create reversed index map
         let path = path.with_extension("pageindex");
-        let json_str = serde_json::to_string(&pindex).map_err(|e| CreationError(e.to_string()))?;
-        std::fs::write(path, json_str).map_err(|e| CreationError(e.to_string()))?;
+        let json_str = serde_json::to_string(&pindex)?;
+        std::fs::write(path, json_str)?;
         Ok(())
     }
 
