@@ -1,3 +1,4 @@
+use std::io;
 use thiserror::Error;
 
 pub mod index;
@@ -22,6 +23,22 @@ pub enum LittIndexError {
     PdfParseError(String),
     #[error("Error parsing txt-file: `{0}`")]
     TxtParseError(String),
+    #[error(transparent)]
+    IoError(#[from] io::Error),
+    #[error(transparent)]
+    TantivyError(#[from] tantivy::TantivyError),
+    #[error(transparent)]
+    StripPrefixError(#[from] std::path::StripPrefixError),
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::error::Error),
+    #[error("One of the locks is poisoned: {0}")]
+    LockPoisoned(String),
+}
+
+impl<T> From<std::sync::PoisonError<T>> for LittIndexError {
+    fn from(error: std::sync::PoisonError<T>) -> Self {
+        Self::LockPoisoned(error.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, LittIndexError>;
