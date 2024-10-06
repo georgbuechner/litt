@@ -489,10 +489,10 @@ impl Index {
         }
     }
 
-    fn create_page_index(path: &Path, body: &str) -> Result<()> {
+    fn create_page_index(path: &mut PathBuf, body: &str) -> Result<()> {
         // Create reversed index map
         let pindex: PageIndex = Self::split_text_into_words(body)?;
-        let path = path.with_extension(".pageindex");
+        path.set_extension("pageindex");
         let json_str = serde_json::to_string(&pindex).map_err(|e| CreationError(e.to_string()))?;
         std::fs::write(path, json_str).map_err(|e| CreationError(e.to_string()))?;
         Ok(())
