@@ -30,7 +30,7 @@ fn test_index_and_search() {
         for (title, pages) in &results {
             assert_eq!(title, TEST_FILE_NAME);
             for search_result in pages {
-                let preview = search.get_preview(search_result, &searched_word).unwrap();
+                let (preview, _) = search.get_preview(search_result, &searched_word).unwrap();
                 assert!(!preview.is_empty());
                 assert!(
                     preview

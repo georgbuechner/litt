@@ -5,11 +5,15 @@ use tantivy::schema::Value;
 use tantivy::{DocAddress, Snippet, SnippetGenerator, TantivyDocument};
 
 extern crate litt_index;
-use litt_index::index::Index;
+use litt_index::index::{Index, PageIndex};
 use litt_shared::search_schema::SearchSchema;
 
 use crate::LittSearchError::SearchError;
 use crate::Result;
+
+use levenshtein::levenshtein;
+
+const FUZZY_PREVIEW_NOT_FOUND: &str = "[fuzzy match] No preview. We're sry.";
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -39,6 +43,18 @@ pub struct Search {
 pub enum SearchTerm {
     Fuzzy(String, u8),
     Exact(String),
+}
+
+fn get_first_term(query: &str) -> String {
+    let parts = query.split(' ').collect::<Vec<_>>();
+    if let Some(first_str) = parts.first() {
+        if let Some(stripped) = first_str.strip_prefix('\"') {
+            return stripped.to_string();
+        }
+        first_str.to_string()
+    } else {
+        "".to_string()
+    }
 }
 
 impl Search {
@@ -111,16 +127,9 @@ impl Search {
         &self,
         search_result: &SearchResult,
         search_term: &SearchTerm,
-    ) -> Result<String> {
+    ) -> Result<(String, String)> {
         // Prepare creating snippet.
         let searcher = self.index.searcher()?;
-        let (query_parser, term) = match search_term {
-            SearchTerm::Fuzzy(_, _) => return Ok("[fuzzy match] No preview. We're sry.".into()),
-            SearchTerm::Exact(term) => (self.index.query_parser(), term),
-        };
-        let query = query_parser?.parse_query(term)?;
-        let mut snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)?;
-        snippet_generator.set_max_num_chars(70);
         let retrieved_doc: TantivyDocument = searcher.doc(DocAddress {
             segment_ord: (search_result.segment_ord),
             doc_id: (search_result.doc_id),
@@ -138,10 +147,98 @@ impl Search {
             )))?;
         let text = fs::read_to_string(path)?;
 
-        // Generate snippet
+        match search_term {
+            SearchTerm::Fuzzy(term, distance) => {
+                for t in term.split(" ").collect::<Vec<&str>>() {
+                    if let Ok((prev, matched_term)) =
+                        self.get_fuzzy_preview(path, t, distance, &text)
+                    {
+                        return Ok((prev, matched_term.to_string()));
+                    }
+                }
+                Ok((FUZZY_PREVIEW_NOT_FOUND.to_string(), "".to_string())) // return empty string so
+                                                                          // that zathura does not
+                                                                          // search
+            }
+            SearchTerm::Exact(term) => self.get_preview_from_query(term, text),
+        }
+    }
+
+    fn get_preview_from_query(&self, term: &str, text: String) -> Result<(String, String)> {
+        let searcher = self.index.searcher()?;
+        let query = self.index.query_parser()?.parse_query(term)?;
+        let mut snippet_generator = SnippetGenerator::create(&searcher, &*query, self.schema.body)
+            .map_err(|e| SearchError(e.to_string()))?;
+        snippet_generator.set_max_num_chars(70);
+
         let snippet = snippet_generator.snippet(&text);
         // let snippet = snippet_generator.snippet_from_doc(&retrieved_doc);
-        Ok(self.highlight(snippet))
+        Ok((self.highlight(snippet), get_first_term(term)))
+    }
+
+    fn get_fuzzy_preview(
+        &self,
+        path: &str,
+        term: &str,
+        distance: &u8,
+        body: &str,
+    ) -> Result<(String, String)> {
+        let pindex: PageIndex = self
+            .index
+            .page_index(path)
+            .map_err(|_| SearchError("".to_string()))?;
+        let (matched_term, start, end) = self
+            .get_fuzzy_match(term, distance, pindex)
+            .map_err(|_| SearchError("".to_string()))?;
+        // Another safe way to get substrings using char_indices
+        let start = body
+            .char_indices()
+            .nth(start.saturating_sub(20) as usize)
+            .unwrap_or((0, ' '))
+            .0;
+        let end = body
+            .char_indices()
+            .nth((end + 20) as usize)
+            .unwrap_or((body.len() - 1, ' '))
+            .0;
+        let substring = &format!("...{}...", &body[start..end]);
+        let substring = substring
+            .to_string()
+            .replace(&matched_term, &format!("**{}**", matched_term));
+        Ok((substring.replace('\n', " "), matched_term))
+    }
+
+    fn get_fuzzy_match(
+        &self,
+        term: &str,
+        distance: &u8,
+        pindex: PageIndex,
+    ) -> Result<(String, u32, u32)> {
+        if pindex.contains_key(term) {
+            let (start, end) = pindex.get(term).unwrap().first().unwrap();
+            Ok((term.to_string(), *start, *end))
+        } else {
+            let mut cur: (String, u32, u32) = ("".to_string(), 0, 0);
+            let mut min_dist: usize = usize::MAX;
+            for (word, matches) in pindex {
+                let dist: usize = if word.contains(term) {
+                    1
+                } else {
+                    levenshtein(term, &word)
+                };
+                println!("{} ~ {} = {}", term, word, dist);
+                if dist < min_dist {
+                    min_dist = dist;
+                    let (start, end) = matches.first().unwrap_or(&(0, 0));
+                    cur = (word.to_string(), *start, *end)
+                }
+            }
+            if min_dist as u8 <= *distance {
+                Ok(cur)
+            } else {
+                Err(SearchError("".to_string()))
+            }
+        }
     }
 
     fn highlight(&self, snippet: Snippet) -> String {
@@ -220,6 +317,8 @@ mod tests {
             ("\"limbs branches\"", vec![]),
             ("\"limbs branches\"~1", vec![2]),
             ("\"of Sole\"*", vec![1]),
+            ("Mystifizierung", vec![1, 2]),
+            ("Mystifizierungen", vec![1]),
         ]);
         // one-word search returning 1 result with 1 page
         for (search_term, pages) in &test_cases {
@@ -241,30 +340,56 @@ mod tests {
     }
 
     fn test_fuzzy_search(search: &Search) {
-        let test_cases: HashMap<&str, Vec<u32>> = HashMap::from([
-            ("Hündin", vec![1]),
-            ("flooding", vec![2]),
-            ("river", vec![1, 2]),
-            ("branch", vec![2]),
-            ("branch Sole", vec![1, 2]),
+        let test_cases: HashMap<&str, Vec<(u32, &str)>> = HashMap::from([
+            ("Hello", vec![(1, "World"), (2, FUZZY_PREVIEW_NOT_FOUND)]),
+            ("Hündin", vec![(1, "Bär")]),
+            ("flooding", vec![(2, "winter’s")]),
+            ("river", vec![(1, "drops"), (2, "foothill")]), // search result
+            ("branch", vec![(2, "arch")]),
+            ("branch Sole", vec![(1, "Salinas River"), (2, "arch")]),
             // ("branch Sole", vec![2]), // Does not work. finds Soledad @ page 1
             // ("branch Sole", vec![1]), // Does not work. finds branches @ page 1
-            ("Soledad", vec![1]),
-            ("Soledud Salinos", vec![1]), // actual fuzzy
-                                          // ("Sole AND Sali", vec![1]), // Does not work: searching for ['sole' 'and', 'sali']
+            ("Soledad", vec![(1, "Salinas")]),
+            ("Soledud", vec![(1, "River")]),
+            ("Soledud Salinos", vec![(1, "the")]), // actual fuzzy
+            // ("Sole AND Sali", vec![1]), // Does not work: searching for ['sole' 'and', 'sali']
+            (
+                "mystifiziert",
+                vec![(1, "Mystifizierung"), (2, "No preview")],
+            ),
         ]);
         // one-word search returning 1 result with 1 page
         for (search_term, pages) in &test_cases {
             println!("- [fuzzy] searching {}.", search_term);
-            let results = search
-                .search(&SearchTerm::Fuzzy(search_term.to_string(), 2), 0, 10)
-                .unwrap();
+            let t_search_term = &SearchTerm::Fuzzy(search_term.to_string(), 2);
+            let results = search.search(t_search_term, 0, 10).unwrap();
             if !pages.is_empty() {
                 assert!(results.contains_key(TEST_DOC_NAME));
                 let doc_results = results.get(TEST_DOC_NAME).unwrap();
                 assert_eq!(pages.len(), doc_results.len());
-                for page in pages {
+                for (page, _) in pages {
                     assert!(doc_results.iter().any(|result| result.page == *page));
+                }
+                for page in doc_results {
+                    println!(
+                        "Getting preview: {} id:{},{}",
+                        page.page, page.doc_id, page.segment_ord
+                    );
+                    let page_num: u32 = page.page;
+                    let preview_part = pages
+                        .iter()
+                        .find(|&&(first, _)| first == page_num)
+                        .map_or("pagenotfound", |&(_, part)| part);
+                    let preview = match search.get_preview(page, t_search_term) {
+                        Ok((preview, _)) => preview,
+                        Err(_) => FUZZY_PREVIEW_NOT_FOUND.to_string(),
+                    };
+                    println!(
+                        "Found preview \"{}\" should contain: {}",
+                        preview, preview_part
+                    );
+                    assert!(preview.contains(preview_part));
+                    println!("success");
                 }
             } else {
                 assert!(!results.contains_key(TEST_DOC_NAME));

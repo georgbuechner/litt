@@ -11,4 +11,4 @@ tantivy = { workspace = true }
 thiserror = { workspace = true }
 litt_shared = { path = "../shared" }
 litt_index = { path = "../index" }
-
+levenshtein = "1.0.5"
