@@ -370,7 +370,7 @@ impl Index {
                 let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
                 self.add_page(dir_entry.path(), page_number, &page_path, &page_body)?;
-                Self::store_page_index(&mut page_path.clone(), Self::create_page_index(&page_body)?)?;
+                Self::store_page_index(&page_path.clone(), Self::create_page_index(&page_body)?)?;
             }
         }
 
@@ -399,7 +399,7 @@ impl Index {
             .map_err(|e| TxtParseError(e.to_string() + full_path.to_string_lossy().as_ref()))?;
         // Finally, add page
         self.add_page(dir_entry.path(), page_number, &page_path, &body)?;
-        Self::store_page_index(&mut page_path.clone(), Self::create_page_index(&body)?)?;
+        Self::store_page_index(&page_path.clone(), Self::create_page_index(&body)?)?;
         Ok(page_number)
     }
 
