@@ -251,8 +251,7 @@ impl Search {
             let mut cur: (String, u32, u32) = ("".to_string(), 0, 0);
             let mut min_dist: usize = usize::MAX;
             for (word, matches) in pindex {
-                let dist: usize = levenshtein(term, &word);
-                let dist = if word.contains(term) { 1 } else { dist };
+                let dist: usize = if word.contains(term) { 1 } else { levenshtein(term, &word)};
                 println!("{} ~ {} = {}", term, word, dist);
                 if dist < min_dist {
                     min_dist = dist;

@@ -370,7 +370,7 @@ impl Index {
                 let page_body = std::fs::read_to_string(&page_path)
                     .map_err(|e| PdfParseError(e.to_string()))?;
                 self.add_page(dir_entry.path(), page_number, &page_path, &page_body)?;
-                Self::create_page_index(&mut page_path.clone(), &page_body)?;
+                Self::store_page_index(&mut page_path.clone(), Self::create_page_index(&page_body)?)?;
             }
         }
 
@@ -399,7 +399,7 @@ impl Index {
             .map_err(|e| TxtParseError(e.to_string() + full_path.to_string_lossy().as_ref()))?;
         // Finally, add page
         self.add_page(dir_entry.path(), page_number, &page_path, &body)?;
-        Self::create_page_index(&mut page_path.clone(), &body)?;
+        Self::store_page_index(&mut page_path.clone(), Self::create_page_index(&body)?)?;
         Ok(page_number)
     }
 
@@ -489,16 +489,15 @@ impl Index {
         }
     }
 
-    fn create_page_index(path: &mut PathBuf, body: &str) -> Result<()> {
+    fn store_page_index(path: &Path, pindex: PageIndex) -> Result<()> {
         // Create reversed index map
-        let pindex: PageIndex = Self::split_text_into_words(body)?;
-        path.set_extension("pageindex");
+        let path = path.with_extension("pageindex");
         let json_str = serde_json::to_string(&pindex).map_err(|e| CreationError(e.to_string()))?;
         std::fs::write(path, json_str).map_err(|e| CreationError(e.to_string()))?;
         Ok(())
     }
 
-    fn split_text_into_words(body: &str) -> Result<PageIndex> {
+    fn create_page_index(body: &str) -> Result<PageIndex> {
         let mut pindex: PageIndex = HashMap::new();
         let mut i = 0;
         let graphemes: Vec<&str> = body.graphemes(true).collect();
@@ -597,9 +596,9 @@ mod tests {
     }
 
     #[test]
-    fn test_split_text_into_words() {
+    fn test_() {
         let text = "Hello*&%&^%, beautiful\n\rWörld!";
-        let result = Index::split_text_into_words(text).unwrap_or_default();
+        let result = Index::create_page_index(text).unwrap_or_default();
         assert!(result.contains_key("Hello"));
         assert!(result.contains_key("beautiful"));
         assert!(result.contains_key("Wörld"));
