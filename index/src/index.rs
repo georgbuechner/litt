@@ -5,7 +5,7 @@ use litt_shared::LITT_DIRECTORY_NAME;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::convert::AsRef;
-use std::fs::{create_dir_all, File};
+use std::fs::{self, create_dir_all, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -14,6 +14,7 @@ use std::time::SystemTime;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Schema, TantivyDocument};
 use tantivy::{Index as TantivyIndex, IndexReader, IndexWriter, ReloadPolicy, Searcher};
+use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 
@@ -39,6 +40,8 @@ pub enum Index {
         failed_documents: Vec<String>,
     },
 }
+
+pub type PageIndex = HashMap<String, Vec<(u32, u32)>>;
 
 impl Index {
     pub fn create(path: impl AsRef<Path>, schema: SearchSchema) -> Result<Self> {
@@ -240,6 +243,14 @@ impl Index {
         }
     }
 
+    pub fn page_index(&self, path: &str) -> Result<PageIndex> {
+        let mut path = PathBuf::from(path);
+        path.set_extension("pageindex");
+        let data_str = fs::read_to_string(path.to_string_lossy().to_string())?;
+        let fast_results: PageIndex = serde_json::from_str(&data_str)?;
+        Ok(fast_results)
+    }
+
     fn create_index(path: &PathBuf, schema: Schema) -> Result<TantivyIndex> {
         TantivyIndex::create_in_dir(path, schema).map_err(Into::into)
     }
@@ -343,6 +354,7 @@ impl Index {
                 // read page-body from generated .txt file
                 let page_body = std::fs::read_to_string(&page_path)?;
                 self.add_page(dir_entry.path(), page_number, &page_path, &page_body)?;
+                Self::store_page_index(&page_path.clone(), Self::create_page_index(&page_body)?)?;
             }
         }
 
@@ -369,6 +381,7 @@ impl Index {
         file.read_to_string(&mut body)?;
         // Finally, add page
         self.add_page(dir_entry.path(), page_number, &page_path, &body)?;
+        Self::store_page_index(&page_path.clone(), Self::create_page_index(&body)?)?;
         Ok(page_number)
     }
 
@@ -445,6 +458,39 @@ impl Index {
             Ok(false)
         }
     }
+
+    fn store_page_index(path: &Path, pindex: PageIndex) -> Result<()> {
+        // Create reversed index map
+        let path = path.with_extension("pageindex");
+        let json_str = serde_json::to_string(&pindex)?;
+        std::fs::write(path, json_str)?;
+        Ok(())
+    }
+
+    fn create_page_index(body: &str) -> Result<PageIndex> {
+        let mut pindex: PageIndex = HashMap::new();
+        let mut i = 0;
+        let graphemes: Vec<&str> = body.graphemes(true).collect();
+        while i < graphemes.len() {
+            let mut buffer: String = "".to_string();
+            let mut j = i;
+            while j < graphemes.len() {
+                if graphemes[j].chars().all(|c| c.is_alphanumeric()) {
+                    buffer += graphemes[j];
+                } else {
+                    pindex
+                        .entry(buffer.clone())
+                        .or_default()
+                        .push((i as u32, j as u32));
+                    i = j;
+                    break;
+                }
+                j += 1;
+            }
+            i += 1;
+        }
+        Ok(pindex)
+    }
 }
 
 #[cfg(test)]
@@ -517,5 +563,14 @@ mod tests {
                 .join(INDEX_DIRECTORY_NAME)
                 .is_dir())
         });
+    }
+
+    #[test]
+    fn test_() {
+        let text = "Hello*&%&^%, beautiful\n\rWörld!";
+        let result = Index::create_page_index(text).unwrap_or_default();
+        assert!(result.contains_key("Hello"));
+        assert!(result.contains_key("beautiful"));
+        assert!(result.contains_key("Wörld"));
     }
 }
