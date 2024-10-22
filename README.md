@@ -16,7 +16,9 @@ litt <index-name> -i <path-to-documents>
 litt <index-name> <search-term>
 ```
 
-![Title Image](images/title-smaller.gif)
+<p align="center">
+  <img src="images/title-new.gif" />
+</div>
 
 # Table of contents
 1. [litt](#litt)
