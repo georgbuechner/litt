@@ -191,7 +191,8 @@ fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError::General(e.to_string())),
         };
         let index_path = path.join(LITT_DIRECTORY_NAME);
-        let msg = match fs::remove_dir_all(index_path) { //. expect("Could not remove index-file")
+        let msg = match fs::remove_dir_all(index_path) {
+            //. expect("Could not remove index-file")
             Ok(()) => "Ok.",
             Err(e) if e.kind() == io::ErrorKind::NotFound => "Index directory didn't exist.",
             Err(e) => return Err(LittError::General(e.to_string())),
