@@ -191,12 +191,17 @@ fn main() -> Result<(), LittError> {
             Err(e) => return Err(LittError::General(e.to_string())),
         };
         let index_path = path.join(LITT_DIRECTORY_NAME);
-        fs::remove_dir_all(index_path).expect("Could not remove index-file");
+        let msg = match fs::remove_dir_all(index_path) {
+            //. expect("Could not remove index-file")
+            Ok(()) => "Ok.",
+            Err(e) if e.kind() == io::ErrorKind::NotFound => "Index directory didn't exist.",
+            Err(e) => return Err(LittError::General(e.to_string())),
+        };
         // remove litt-index from tracker.
         if let Err(e) = index_tracker.remove(index_name.clone()) {
             return Err(LittError::General(e.to_string()));
         }
-        println!("Deleted index \"{}\".", index_name);
+        println!("Deleted index \"{}\": {}", index_name, msg);
         return Ok(());
     }
 
