@@ -66,7 +66,7 @@ impl IndexTracker {
         self.store_indicies()
     }
 
-    pub fn remove(mut self, name: String) -> Result<()> {
+    pub fn remove(&mut self, name: String) -> Result<()> {
         self.indices.remove(&name);
         self.store_indicies()
     }

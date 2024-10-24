@@ -226,7 +226,6 @@ impl Search {
                 } else {
                     levenshtein(term, &word)
                 };
-                println!("{} ~ {} = {}", term, word, dist);
                 if dist < min_dist {
                     min_dist = dist;
                     let (start, end) = matches.first().unwrap_or(&(0, 0));
