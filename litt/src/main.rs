@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::path::Path;
 use std::time::Instant;
 use std::{env, io};
-use std::io::Write;
 
 use clap::CommandFactory;
 use clap::Parser;
@@ -24,7 +24,10 @@ use tracker::IndexTracker;
 use colored::*;
 use thiserror::Error;
 
-use crossterm::{event::{self, Event, KeyCode}, terminal, execute};
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute, terminal,
+};
 
 #[derive(Debug, Error)]
 enum LittError {
@@ -36,6 +39,13 @@ enum LittError {
     LittIndexError(#[from] litt_index::LittIndexError),
     #[error(transparent)]
     LittIndexTrackerError(#[from] tracker::LittIndexTrackerError),
+}
+
+pub struct SearchOptions {
+    limit: usize,
+    offset: usize,
+    fuzzy: bool,
+    distance: u8,
 }
 
 // helper functions
@@ -97,10 +107,25 @@ fn show_failed_documents_error(index: &Index) {
 fn read(history: &mut Vec<String>) -> Result<String, LittError> {
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
-    let mut input = String::new(); 
+    let mut input = String::new();
     let mut index = history.len();
-    print!("> "); 
+    print!("> ");
     stdout.flush()?;
+
+    fn clear_and_print(
+        stdout: &mut io::Stdout,
+        line: String,
+        adjust_cursor: bool,
+    ) -> Result<(), LittError> {
+        execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
+        execute!(stdout, MoveToColumn(0))?;
+        print!("{}", line);
+        if adjust_cursor {
+            execute!(stdout, MoveToColumn(line.len() as u16))?;
+        }
+        stdout.flush()?;
+        Ok(())
+    }
 
     loop {
         if event::poll(std::time::Duration::from_millis(500))? {
@@ -116,62 +141,47 @@ fn read(history: &mut Vec<String>) -> Result<String, LittError> {
                         input = ">".to_string();
                         break;
                     }
-                    KeyCode::Up=> {
+                    KeyCode::Up => {
                         if index > 0 {
                             index -= 1;
                             input = history.get(index).unwrap().to_string();
-                            execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                            execute!(stdout, MoveToColumn(0))?;
-                            print!("> {}", input); 
-                            execute!(stdout, MoveToColumn((input.len()+2) as u16))?;
+                            clear_and_print(&mut stdout, format!("> {}", input), true)?;
                             stdout.flush()?;
                         }
                     }
-                    KeyCode::Down=> {
-                        if history.len() > index+1 {
+                    KeyCode::Down => {
+                        if history.len() > index + 1 {
                             index += 1;
                             input = history.get(index).unwrap().to_string();
-                            execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                            execute!(stdout, MoveToColumn(0))?;
-                            print!("> {}", input); 
-                            execute!(stdout, MoveToColumn((input.len()+2) as u16))?;
-                            stdout.flush()?;
-                        }
-                        else if history.len() > index {
+                            clear_and_print(&mut stdout, format!("> {}", input), true)?;
+                        } else if history.len() > index {
                             index += 1;
                             input = "".to_string();
-                            execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                            execute!(stdout, MoveToColumn(0))?;
-                            print!("> "); 
-                            stdout.flush()?;
+                            clear_and_print(&mut stdout, "> ".to_string(), false)?;
                         }
                     }
-
                     KeyCode::Char(c) => {
-                        input.push(c); 
+                        input.push(c);
                         print!("{}", c); // Echo the character
                         stdout.flush()?;
                     }
                     KeyCode::Backspace => {
                         if !input.is_empty() {
                             input.pop();
-                            execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                            execute!(stdout, MoveToColumn(0))?;
-                            print!("> "); 
-                            stdout.flush()?;
+                            clear_and_print(&mut stdout, format!("> {}", input), false)?;
                         }
                     }
                     KeyCode::Enter => {
                         break;
                     }
-                    _ => {} 
+                    _ => {}
                 }
             }
         }
     }
     terminal::disable_raw_mode()?;
     println!();
-    if history.is_empty() || (history.len() > 0 && history.last().unwrap().to_string() != input) {
+    if history.is_empty() || (!history.is_empty() && history.last().unwrap() != &input) {
         history.push(input.clone());
     }
     Ok(input)
@@ -185,7 +195,9 @@ fn fast_open_result(index_tracker: &IndexTracker, last_result_num: &u32) -> Resu
         Ok(fast_results) => fast_results,
         Err(e) => return Err(LittError::General(e.to_string())),
     };
-    let result = fast_results.get(last_result_num).ok_or_else(|| format!("Number {} not in last results", last_result_num));
+    let result = fast_results
+        .get(last_result_num)
+        .ok_or_else(|| format!("Number {} not in last results", last_result_num));
 
     match result {
         Ok(path) => {
@@ -194,11 +206,10 @@ fn fast_open_result(index_tracker: &IndexTracker, last_result_num: &u32) -> Resu
             } else {
                 open_std_programm(path.0.clone())?;
             }
-        },
-        Err(err) => return Err(LittError::General(err.to_string())), 
-
+        }
+        Err(err) => return Err(LittError::General(err.to_string())),
     }
-    return Ok(());
+    Ok(())
 }
 
 /**
@@ -214,13 +225,17 @@ fn list_indicies(index_tracker: &IndexTracker) -> Result<(), LittError> {
         }
         Err(e) => return Err(LittError::General(e.to_string())),
     }
-    return Ok(());
+    Ok(())
 }
 
 /**
  * Create new litt index
  */
-fn create_litt_index(index_tracker: &mut IndexTracker, index_name: String, rel_path: &String) -> Result<(), LittError> {
+fn create_litt_index(
+    index_tracker: &mut IndexTracker,
+    index_name: String,
+    rel_path: &String,
+) -> Result<(), LittError> {
     let current_dir = env::current_dir()?;
     let path = current_dir.join(rel_path);
     println!(
@@ -259,13 +274,16 @@ fn create_litt_index(index_tracker: &mut IndexTracker, index_name: String, rel_p
         start.elapsed()
     );
     show_failed_documents_error(&index);
-    return Ok(());
+    Ok(())
 }
 
 /**
  * Remove existing litt index
  */
-fn remove_litt_index(index_tracker: &mut IndexTracker, index_name: String) -> Result<(), LittError> {
+fn remove_litt_index(
+    index_tracker: &mut IndexTracker,
+    index_name: String,
+) -> Result<(), LittError> {
     let path = match index_tracker.get_path(&index_name) {
         Ok(path) => path,
         Err(e) => return Err(LittError::General(e.to_string())),
@@ -277,17 +295,21 @@ fn remove_litt_index(index_tracker: &mut IndexTracker, index_name: String) -> Re
         return Err(LittError::General(e.to_string()));
     }
     println!("Deleted index \"{}\".", index_name);
-    return Ok(());
+    Ok(())
 }
 
-/** 
+/**
  * Update litt index (only indexes new or changed documents)
  */
-fn update_litt_index(index: Index, searcher: Searcher, index_name: String) -> Result<(), LittError> {
+fn update_litt_index(
+    index: Index,
+    searcher: Searcher,
+    index_name: String,
+) -> Result<(), LittError> {
     println!("Updating index \"{}\".", index_name);
     let old_num_docs = searcher.num_docs();
     let start = Instant::now();
-    return match index.update() {
+    match index.update() {
         Ok(ref updated_index) => {
             println!(
                 "Update done. Successfully indexed {} new document pages in {:?}. Now {} document pages.",
@@ -301,13 +323,17 @@ fn update_litt_index(index: Index, searcher: Searcher, index_name: String) -> Re
             Ok(())
         }
         Err(e) => Err(LittError::General(e.to_string())),
-    };
+    }
 }
 
 /**
  * Reload litt index (reloads *every* document)
  */
-fn reload_litt_index(index: Index, searcher: Searcher, index_name: String) -> Result<(), LittError> {
+fn reload_litt_index(
+    index: Index,
+    searcher: Searcher,
+    index_name: String,
+) -> Result<(), LittError> {
     println!("Reloading index \"{}\".", index_name);
     let old_num_docs = searcher.num_docs();
     let start = Instant::now();
@@ -320,18 +346,24 @@ fn reload_litt_index(index: Index, searcher: Searcher, index_name: String) -> Re
                 searcher.num_docs(),
             );
             show_failed_documents_error(&index);
-            return Ok(());
+            Ok(())
         }
-        Err(e) => {
-            return Err(LittError::General(e.to_string()));
-        }
+        Err(e) => Err(LittError::General(e.to_string())),
     }
 }
 
-/** 
- * Searches for query in litt index 
+/**
+ * Searches for query in litt index
  */
-fn search_litt_index(search: &Search, index_tracker: &mut IndexTracker, index_path: &PathBuf, searcher: &Searcher, index_name: &String, term: String, fuzzy: bool, distance: u8, offset: usize, limit: usize) -> Result<(), LittError> {
+fn search_litt_index(
+    search: &Search,
+    index_tracker: &mut IndexTracker,
+    index_path: &Path,
+    searcher: &Searcher,
+    index_name: &String,
+    term: String,
+    opts: &SearchOptions,
+) -> Result<(), LittError> {
     let num_docs = searcher.num_docs();
     println!(
         "Search index \"{}\" ({}) for {}",
@@ -340,12 +372,12 @@ fn search_litt_index(search: &Search, index_tracker: &mut IndexTracker, index_pa
         term
     );
     let start = Instant::now();
-    let search_term = if fuzzy {
-        litt_search::search::SearchTerm::Exact(term)
+    let search_term = if opts.fuzzy {
+        litt_search::search::SearchTerm::Fuzzy(term, opts.distance)
     } else {
-        litt_search::search::SearchTerm::Fuzzy(term, distance)
+        litt_search::search::SearchTerm::Exact(term)
     };
-    let results = match search.search(&search_term, offset, limit) {
+    let results = match search.search(&search_term, opts.offset, opts.limit) {
         Ok(results) => results,
         Err(e) => return Err(LittError::General(e.to_string())),
     };
@@ -391,7 +423,7 @@ fn search_litt_index(search: &Search, index_tracker: &mut IndexTracker, index_pa
     println!(
         "{} results (offset={}) from {} pages in {:?}.",
         results.values().fold(0, |acc, list| acc + list.len()),
-        offset,
+        opts.offset,
         num_docs,
         start.elapsed()
     );
@@ -460,61 +492,83 @@ fn main() -> Result<(), LittError> {
     let search = Search::new(index, SearchSchema::default());
     // do normal search
     if !cli.term.is_empty() {
-        return search_litt_index(&search, &mut index_tracker, &index_path, &searcher, &index_name, cli.term, cli.fuzzy, cli.distance, cli.offset, cli.limit);
+        let opts = SearchOptions {
+            limit: cli.limit,
+            offset: cli.offset,
+            fuzzy: cli.fuzzy,
+            distance: cli.distance,
+        };
+        return search_litt_index(
+            &search,
+            &mut index_tracker,
+            &index_path,
+            &searcher,
+            &index_name,
+            cli.term,
+            &opts,
+        );
     }
     // do interactive search
-    let mut distance = 2;
-    let mut limit = 10; 
-    let mut offset = 0;
+    let mut opts = SearchOptions {
+        limit: 10,
+        offset: 0,
+        fuzzy: false,
+        distance: 2,
+    };
     let mut search_term = String::new();
     let mut history: Vec<String> = Vec::new();
     loop {
-        if search_term == "" {
-            println!("Interactive search in \"{}\" (limit={}, distance={}; type \"#set <variable> <value>\" to change, \"q\" to quit, start search-term with \"~\" for fuzzy-search)", index_name.clone(), limit, distance);
+        if search_term.is_empty() {
+            println!("Interactive search in \"{}\" (limit={}, distance={}; type \"#set <variable> <value>\" to change, \"q\" to quit, start search-term with \"~\" for fuzzy-search)", index_name.clone(), opts.limit, opts.distance);
         } else {
-            println!("Interactive search in \"{}\" (showing results {} to {}; type \"→\" for next, \"←\" for previous {} results, \"↑\"|\"↓\" to cycle history, \"q\" to quit)", index_name.clone(), offset, offset+limit, limit);
+            println!("Interactive search in \"{}\" (showing results {} to {}; type \"→\" for next, \"←\" for previous {} results, \"↑\"|\"↓\" to cycle history, \"q\" to quit)", index_name.clone(), opts.offset, opts.offset+opts.limit, opts.limit);
         }
         let inp = read(&mut history)?;
         if inp == "q" {
             break;
         }
-        if (inp == ">" || inp == "<") && search_term == "" {
+        if (inp == ">" || inp == "<") && search_term.is_empty() {
             println!("No search term specified! Enter search term first...");
             continue;
-        } else if inp == "<" && offset == 0 {
+        } else if inp == "<" && opts.offset == 0 {
             println!("Offset is already zero...");
             continue;
         } else if inp == ">" {
-            offset += limit;
+            opts.offset += opts.limit;
         } else if inp == "<" {
-            offset = offset - limit;
+            opts.offset -= opts.limit;
         } else if inp.starts_with("#") {
-            let parts: Vec<&str> = inp.split(" ").collect(); 
+            let parts: Vec<&str> = inp.split(" ").collect();
             match parts.get(1) {
-                Some(&"limit") => limit = parts[2].parse().unwrap(),
-                Some(&"distance") => distance = parts[2].parse().unwrap(),
-                _ => { 
+                Some(&"limit") => opts.limit = parts[2].parse().unwrap(),
+                Some(&"distance") => opts.distance = parts[2].parse().unwrap(),
+                _ => {
                     println!("You can only set \"limit\", \"fuzzy\" or \"distance\"...");
                     continue;
                 }
             }
-            if search_term == "" {
+            if search_term.is_empty() {
                 continue;
             }
         } else {
             search_term = inp;
         }
-        let final_term = if search_term.starts_with("~") {
-            search_term[1..].to_string()
-        } else {
-            search_term.clone()
-        };
-        match search_litt_index(&search, &mut index_tracker, &index_path, &searcher, &index_name, final_term, !search_term.starts_with("~"), distance, offset, limit) {
+        let final_term = search_term.strip_prefix("~").unwrap_or(&search_term);
+        opts.fuzzy = search_term.starts_with("~");
+        match search_litt_index(
+            &search,
+            &mut index_tracker,
+            &index_path,
+            &searcher,
+            &index_name,
+            final_term.to_string(),
+            &opts,
+        ) {
             Ok(_) => {
                 println!();
-                continue; 
-            },
-            Err(e) => return Err(e)
+                continue;
+            }
+            Err(e) => return Err(e),
         }
     }
     Ok(())
