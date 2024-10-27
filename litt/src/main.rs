@@ -24,6 +24,9 @@ use tracker::IndexTracker;
 use colored::*;
 use thiserror::Error;
 
+use crate::InteractiveSearchInput::*;
+use crate::InteractiveSearchState::*;
+use crate::SearchOptionUpdate::*;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute, terminal,
@@ -41,11 +44,145 @@ enum LittError {
     LittIndexTrackerError(#[from] tracker::LittIndexTrackerError),
 }
 
+#[derive(Copy, Clone)]
 pub struct SearchOptions {
     limit: usize,
     offset: usize,
     fuzzy: bool,
     distance: u8,
+}
+
+struct InteractiveSearch {
+    state: InteractiveSearchState,
+}
+
+enum InteractiveSearchState {
+    WaitingForInitialInput {
+        options: SearchOptions,
+    },
+    SearchInProgress {
+        search_term: String,
+        options: SearchOptions,
+    },
+    Finished,
+}
+
+enum SearchOptionUpdate {
+    Limit(usize),
+    Fuzzy(String),
+    Distance(u8),
+}
+
+enum InteractiveSearchInput {
+    BrowseBackward,
+    BrowseForward,
+    Quit,
+    Empty,
+    SearchOptionUpdate(SearchOptionUpdate),
+    SearchTerm(String),
+}
+
+impl InteractiveSearch {
+    fn new(options: SearchOptions) -> Self {
+        Self {
+            state: WaitingForInitialInput { options },
+        }
+    }
+
+    fn display_instructions(&self, index_name: &str) {
+        match &self.state {
+            WaitingForInitialInput { options: opts, .. } => {
+                println!(
+                    "Interactive search in \"{}\" (limit={}, distance={}; type \"#set <variable> \
+                    <value>\" to change, \"q\" to quit, start search-term with \"~\" for \
+                    fuzzy-search)",
+                    index_name, opts.limit, opts.distance
+                );
+            }
+            SearchInProgress { options: opts, .. } => {
+                println!(
+                    "Interactive search in \"{}\" (showing results {} to {}; type \"→\" for next, \
+                    \"←\" for previous {} results, \"↑\"|\"↓\" to cycle history, \"q\" to quit)",
+                    index_name,
+                    opts.offset,
+                    opts.offset + opts.limit,
+                    opts.limit
+                );
+            }
+            Finished => {}
+        }
+    }
+
+    /// Transition the interactive search state machine.
+    fn state_transition(&mut self, input: &InteractiveSearchInput) {
+        match (&mut self.state, input) {
+            // No state change when input is empty
+            (_, Empty) => {}
+            (_, Quit) => {
+                self.state = Finished;
+            }
+            // Trying to browse results without having searched; print warning and do nothing.
+            (WaitingForInitialInput { .. }, BrowseBackward | BrowseForward) => {
+                println!("No search term specified! Enter search term first...");
+            }
+            // Browsing results
+            (
+                SearchInProgress {
+                    ref mut options, ..
+                },
+                BrowseForward,
+            ) => {
+                options.offset += options.limit;
+            }
+            (
+                SearchInProgress {
+                    ref mut options, ..
+                },
+                BrowseBackward,
+            ) => {
+                if options.offset == 0 {
+                    println!("Offset is already zero...");
+                } else {
+                    options.offset -= options.limit;
+                }
+            }
+            // Change options or fuzzy search
+            (
+                WaitingForInitialInput {
+                    ref mut options, ..
+                }
+                | SearchInProgress {
+                    ref mut options, ..
+                },
+                SearchOptionUpdate(update),
+            ) => match update {
+                Limit(limit) => {
+                    options.limit = *limit;
+                }
+                Distance(distance) => {
+                    options.distance = *distance;
+                }
+                Fuzzy(term) => {
+                    options.fuzzy = true;
+                    self.state = SearchInProgress {
+                        search_term: term.to_string(),
+                        options: *options,
+                    }
+                }
+            },
+            // Normal search
+            (
+                SearchInProgress { options, .. } | WaitingForInitialInput { options },
+                SearchTerm(term),
+            ) => {
+                self.state = SearchInProgress {
+                    search_term: term.to_string(),
+                    options: *options,
+                }
+            }
+            (Finished, _) => unreachable!(),
+        }
+    }
 }
 
 // helper functions
@@ -104,10 +241,11 @@ fn show_failed_documents_error(index: &Index) {
     }
 }
 
-fn read(history: &mut Vec<String>) -> Result<String, LittError> {
+fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> {
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
-    let mut input = String::new();
+    let mut input_in_progress = String::new();
+    let mut input = InteractiveSearchInput::Empty;
     let mut index = history.len();
     print!("> ");
     stdout.flush()?;
@@ -133,45 +271,77 @@ fn read(history: &mut Vec<String>) -> Result<String, LittError> {
                 match key_event.code {
                     KeyCode::Left => {
                         execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                        input = "<".to_string();
+                        input = BrowseBackward;
                         break;
                     }
                     KeyCode::Right => {
                         execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                        input = ">".to_string();
+                        input = BrowseForward;
                         break;
                     }
                     KeyCode::Up => {
                         if index > 0 {
                             index -= 1;
-                            input = history.get(index).unwrap().to_string();
-                            clear_and_print(&mut stdout, format!("> {}", input), true)?;
+                            input_in_progress = history.get(index).unwrap().to_string();
+                            clear_and_print(&mut stdout, format!("> {}", input_in_progress), true)?;
                             stdout.flush()?;
                         }
                     }
                     KeyCode::Down => {
                         if history.len() > index + 1 {
                             index += 1;
-                            input = history.get(index).unwrap().to_string();
-                            clear_and_print(&mut stdout, format!("> {}", input), true)?;
+                            input_in_progress = history.get(index).unwrap().to_string();
+                            clear_and_print(&mut stdout, format!("> {}", input_in_progress), true)?;
                         } else if history.len() > index {
                             index += 1;
-                            input = "".to_string();
+                            input_in_progress = "".to_string();
                             clear_and_print(&mut stdout, "> ".to_string(), false)?;
                         }
                     }
                     KeyCode::Char(c) => {
-                        input.push(c);
+                        input_in_progress.push(c);
                         print!("{}", c); // Echo the character
                         stdout.flush()?;
                     }
                     KeyCode::Backspace => {
-                        if !input.is_empty() {
-                            input.pop();
-                            clear_and_print(&mut stdout, format!("> {}", input), false)?;
+                        if !input_in_progress.is_empty() {
+                            input_in_progress.pop();
+                            clear_and_print(
+                                &mut stdout,
+                                format!("> {}", input_in_progress),
+                                false,
+                            )?;
                         }
                     }
                     KeyCode::Enter => {
+                        if input_in_progress == "q" {
+                            input = Quit;
+                        } else if input_in_progress.starts_with('~') {
+                            input = InteractiveSearchInput::SearchOptionUpdate(Fuzzy(
+                                input_in_progress
+                                    .strip_prefix('~')
+                                    .unwrap_or(&input_in_progress)
+                                    .to_string(),
+                            ));
+                        } else if input_in_progress.starts_with('#') {
+                            let parts: Vec<&str> = input_in_progress.split(' ').collect();
+                            input = match parts.get(1) {
+                                Some(&"limit") => InteractiveSearchInput::SearchOptionUpdate(
+                                    Limit(parts[2].parse().unwrap()),
+                                ),
+                                Some(&"distance") => InteractiveSearchInput::SearchOptionUpdate(
+                                    Distance(parts[2].parse().unwrap()),
+                                ),
+                                _ => {
+                                    println!(
+                                        "You can only set \"limit\", \"fuzzy\" or \"distance\"..."
+                                    );
+                                    Empty
+                                }
+                            }
+                        } else if !input_in_progress.is_empty() {
+                            input = SearchTerm(input_in_progress.clone());
+                        };
                         break;
                     }
                     _ => {}
@@ -181,8 +351,9 @@ fn read(history: &mut Vec<String>) -> Result<String, LittError> {
     }
     terminal::disable_raw_mode()?;
     println!();
-    if history.is_empty() || (!history.is_empty() && history.last().unwrap() != &input) {
-        history.push(input.clone());
+    if history.is_empty() || (!history.is_empty() && history.last().unwrap() != &input_in_progress)
+    {
+        history.push(input_in_progress);
     }
     Ok(input)
 }
@@ -509,66 +680,38 @@ fn main() -> Result<(), LittError> {
         );
     }
     // do interactive search
-    let mut opts = SearchOptions {
+    let opts = SearchOptions {
         limit: 10,
         offset: 0,
         fuzzy: false,
         distance: 2,
     };
-    let mut search_term = String::new();
     let mut history: Vec<String> = Vec::new();
+    let mut interactive_search = InteractiveSearch::new(opts);
     loop {
-        if search_term.is_empty() {
-            println!("Interactive search in \"{}\" (limit={}, distance={}; type \"#set <variable> <value>\" to change, \"q\" to quit, start search-term with \"~\" for fuzzy-search)", index_name.clone(), opts.limit, opts.distance);
-        } else {
-            println!("Interactive search in \"{}\" (showing results {} to {}; type \"→\" for next, \"←\" for previous {} results, \"↑\"|\"↓\" to cycle history, \"q\" to quit)", index_name.clone(), opts.offset, opts.offset+opts.limit, opts.limit);
-        }
+        interactive_search.display_instructions(&index_name);
         let inp = read(&mut history)?;
-        if inp == "q" {
-            break;
-        }
-        if (inp == ">" || inp == "<") && search_term.is_empty() {
-            println!("No search term specified! Enter search term first...");
-            continue;
-        } else if inp == "<" && opts.offset == 0 {
-            println!("Offset is already zero...");
-            continue;
-        } else if inp == ">" {
-            opts.offset += opts.limit;
-        } else if inp == "<" {
-            opts.offset -= opts.limit;
-        } else if inp.starts_with("#") {
-            let parts: Vec<&str> = inp.split(" ").collect();
-            match parts.get(1) {
-                Some(&"limit") => opts.limit = parts[2].parse().unwrap(),
-                Some(&"distance") => opts.distance = parts[2].parse().unwrap(),
-                _ => {
-                    println!("You can only set \"limit\", \"fuzzy\" or \"distance\"...");
-                    continue;
-                }
+        interactive_search.state_transition(&inp);
+        match &interactive_search.state {
+            WaitingForInitialInput { .. } => {}
+            Finished => {
+                break;
             }
-            if search_term.is_empty() {
-                continue;
-            }
-        } else {
-            search_term = inp;
-        }
-        let final_term = search_term.strip_prefix("~").unwrap_or(&search_term);
-        opts.fuzzy = search_term.starts_with("~");
-        match search_litt_index(
-            &search,
-            &mut index_tracker,
-            &index_path,
-            &searcher,
-            &index_name,
-            final_term.to_string(),
-            &opts,
-        ) {
-            Ok(_) => {
-                println!();
-                continue;
-            }
-            Err(e) => return Err(e),
+            SearchInProgress {
+                search_term: final_term,
+                options: opts,
+            } => match search_litt_index(
+                &search,
+                &mut index_tracker,
+                &index_path,
+                &searcher,
+                &index_name,
+                final_term.to_string(),
+                opts,
+            ) {
+                Ok(_) => println!(),
+                Err(e) => return Err(e),
+            },
         }
     }
     Ok(())
