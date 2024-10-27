@@ -317,7 +317,7 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
                         if input_in_progress == "q" {
                             input = Quit;
                         } else if input_in_progress.starts_with('~') {
-                            input = InteractiveSearchInput::SearchOptionUpdate(Fuzzy(
+                            input = SearchOptionUpdate(Fuzzy(
                                 input_in_progress
                                     .strip_prefix('~')
                                     .unwrap_or(&input_in_progress)
@@ -325,20 +325,50 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
                             ));
                         } else if input_in_progress.starts_with('#') {
                             let parts: Vec<&str> = input_in_progress.split(' ').collect();
-                            input = match parts.get(1) {
-                                Some(&"limit") => InteractiveSearchInput::SearchOptionUpdate(
-                                    Limit(parts[2].parse().unwrap()),
-                                ),
-                                Some(&"distance") => InteractiveSearchInput::SearchOptionUpdate(
-                                    Distance(parts[2].parse().unwrap()),
-                                ),
+                            let mut search_option_input = Empty;
+                            let mut error_message: Option<&str> = None;
+                            match (parts.get(1), parts.get(2)) {
+                                (Some(&"limit"), None) => {
+                                    error_message = Some("Enter a limit.");
+                                }
+                                (Some(&"limit"), Some(limit_to_parse)) => {
+                                    let parse_result = limit_to_parse.parse();
+                                    match parse_result {
+                                        Ok(limit) => {
+                                            search_option_input = SearchOptionUpdate(Limit(limit));
+                                        }
+                                        Err(_) => {
+                                            error_message = Some("Error: limit must be a number.");
+                                        }
+                                    }
+                                }
+                                (Some(&"distance"), None) => {
+                                    error_message = Some("Enter a distance.");
+                                }
+                                (Some(&"distance"), Some(distance_to_parse)) => {
+                                    let parse_result = distance_to_parse.parse();
+                                    match parse_result {
+                                        Ok(distance) => {
+                                            search_option_input =
+                                                SearchOptionUpdate(Distance(distance));
+                                        }
+                                        Err(_) => {
+                                            error_message =
+                                                Some("Error: Distance must be a number.");
+                                        }
+                                    }
+                                }
                                 _ => {
-                                    println!(
-                                        "You can only set \"limit\", \"fuzzy\" or \"distance\"..."
+                                    error_message = Some(
+                                        "You can only set \"limit\", \"fuzzy\" or \"distance\"...",
                                     );
-                                    Empty
                                 }
                             }
+                            if let Some(error_message) = error_message {
+                                println!();
+                                println!("{error_message}");
+                            }
+                            input = search_option_input;
                         } else if !input_in_progress.is_empty() {
                             input = SearchTerm(input_in_progress.clone());
                         };
