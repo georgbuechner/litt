@@ -381,8 +381,7 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
     }
     terminal::disable_raw_mode()?;
     println!();
-    if history.is_empty() || (!history.is_empty() && history.last().unwrap() != &input_in_progress)
-    {
+    if history.is_empty() || (history.last().unwrap() != &input_in_progress) {
         history.push(input_in_progress);
     }
     Ok(input)
