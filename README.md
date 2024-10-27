@@ -11,12 +11,14 @@ cp -f litt-ubuntu-latest /usr/local/bin/litt
 (Replace version and platform accordingly)
 
 **Usage**:
-```
-litt <index-name> -i <path-to-documents>
-litt <index-name> <search-term>
+```python
+litt <index-name> -i <path-to-documents>  # create new index <index-name>
+litt <index-name> <search-term>  # search for <search-term> in <index-name>
 ```
 
-![Title Image](images/title-smaller.gif)
+<p align="center">
+  <img src="images/title-new.gif" />
+</div>
 
 # Table of contents
 1. [litt](#litt)
@@ -43,8 +45,9 @@ The command-line tool [pdftotext](https://www.xpdfreader.com/download.html) shou
 Also, we advise to install [zathura](https://pwmt.org/projects/zathura/installation/), a very lightweight pdf reader. If zathura is availible we can open the selected pdf (`litt <num>`) on the selected page and with the search term highlighted.
 
 ### Pre-built binaries.<a name="prebuilt-binaries"></a>
-There are pre-built binaries available for Windows, Linux and MacOS. Simply
-download the binary (see: *Releases*) and you are ready to go. It is advised to add `litt` to path. 
+There are pre-built binaries available for Windows and Linux. 
+Simply download the binary (see: *Releases*) and you are ready to go. 
+It is advised to add `litt` to path. 
 
 #### Linux 
 This would be a way to go for Linux:
@@ -64,18 +67,14 @@ Verify by running `litt --version`. It should show something like:
 litt 1.0.1
 ```
 
-#### MacOS
-Installation should work similar to Linux: 
-```
-wget https://github.com/georgbuechner/litt/releases/download/v1.0.1/litt-macOS-latest
-chmod +x litt-macOS-latest
-cp -f litt-macOS-latest /usr/local/bin/litt
-```
-
 #### Windows 
-Honestly, I don't really know. After downloading the file `litt` should be added
+Honestly, I don't really know. After downloading the [windows binary](https://github.com/georgbuechner/litt/releases), `litt` should be added
 to path. This guide gives some explanation on how to do that: 
 https://windowsloop.com/how-to-add-to-windows-path/
+
+#### MacOS
+Sadly there are no binarys available for MacOS. For installation see *Compile
+from source*.
 
 ### Compile from source 
 First you should install `Rust`/`Cargo`: https://www.rust-lang.org/tools/install 
@@ -146,12 +145,7 @@ Use `litt <num>` to open a document (num refers to the number in brackets, f.e.
 
 ![simple example](images/simple_example.png)
 
-**NOTE (open on wrong page):** Possibly zathura (or whatever pdf-reader you're using) will open a
-result on the correct page, but then search for the term and (mostly in the case
-of fuzzy matching) not find the term on that page but on another. In this case
-it might apear like zathura sent you to the wrong page or no result was found on
-the page you wanted to open. For zathura: simply enter `:<page-num>` to go the
-the page the result was found. Possibly the searched term was not found by
+**NOTE (open on wrong page):** Possibly the searched term was not found by
 zathura since it breaks line, e.i: 
 ``` 
 my- 
@@ -223,11 +217,12 @@ You may also search for multiple words:
 litt books 'Tulp Narz' --fuzzy
 ```
 
-*Note*
+**Note:**
 - working with phrases (`litt books '"Tulpen Narzisse"~1'`) or `AND`/`OR`
-does not work. 
-- no preview can be shown when using fuzzy search.
-- fuzzy matching only works on the body
+does not work with fuzzy search
+- In some cases no preview can be shown when using fuzzy search, we're working
+  to improve this!
+- fuzzy matching only works on the body, not the title.
 
 
 ## Acknowledgements
@@ -252,6 +247,8 @@ awesome libraries makeing `litt` possible:
   good at doing its job)
 - [rayon](https://github.com/rayon-rs/rayon) for parallelizing indexing and
   making it ~10 times faster!
+- [levenshtein-rs](https://github.com/wooorm/levenshtein-rs) for allowing us to
+  show atleast some previews for fuzzy search
 
 
 We also want to clarify, that not all dependencies use the same license as we do:
