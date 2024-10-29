@@ -53,7 +53,7 @@ pub struct SearchOptions {
 }
 
 struct InteractiveSearch {
-    state: InteractiveSearchState,
+    state: InteractiveSearchState
 }
 
 enum InteractiveSearchState {
@@ -62,6 +62,10 @@ enum InteractiveSearchState {
     },
     SearchInProgress {
         search_term: String,
+        options: SearchOptions,
+    },
+    OpenPdf {
+        last_result_num: u32,
         options: SearchOptions,
     },
     Finished,
@@ -80,6 +84,7 @@ enum InteractiveSearchInput {
     Empty,
     SearchOptionUpdate(SearchOptionUpdate),
     SearchTerm(String),
+    LastSearchResult(u32),
 }
 
 impl InteractiveSearch {
@@ -99,7 +104,7 @@ impl InteractiveSearch {
                     index_name, opts.limit, opts.distance
                 );
             }
-            SearchInProgress { options: opts, .. } => {
+            SearchInProgress {options: opts, ..} | OpenPdf { options: opts, .. } => {
                 println!(
                     "Interactive search in \"{}\" (showing results {} to {}; type \"→\" for next, \
                     \"←\" for previous {} results, \"↑\"|\"↓\" to cycle history, \"q\" to quit)",
@@ -121,23 +126,25 @@ impl InteractiveSearch {
             (_, Quit) => {
                 self.state = Finished;
             }
+            // Open pdf/ result
+            (WaitingForInitialInput { options } | SearchInProgress { options, .. } | OpenPdf { options, .. }, LastSearchResult(last_number_num)) => {
+                self.state = OpenPdf{ 
+                    last_result_num: *last_number_num, options: *options
+                }
+            }
             // Trying to browse results without having searched; print warning and do nothing.
             (WaitingForInitialInput { .. }, BrowseBackward | BrowseForward) => {
                 println!("No search term specified! Enter search term first...");
             }
             // Browsing results
             (
-                SearchInProgress {
-                    ref mut options, ..
-                },
+                SearchInProgress { ref mut options, .. } | OpenPdf { ref mut options, .. },
                 BrowseForward,
             ) => {
                 options.offset += options.limit;
             }
             (
-                SearchInProgress {
-                    ref mut options, ..
-                },
+                SearchInProgress { ref mut options, .. } | OpenPdf { ref mut options, .. },
                 BrowseBackward,
             ) => {
                 if options.offset == 0 {
@@ -153,7 +160,8 @@ impl InteractiveSearch {
                 }
                 | SearchInProgress {
                     ref mut options, ..
-                },
+                }
+                | OpenPdf { ref mut options, .. },
                 SearchOptionUpdate(update),
             ) => match update {
                 Limit(limit) => {
@@ -172,13 +180,13 @@ impl InteractiveSearch {
             },
             // Normal search
             (
-                SearchInProgress { options, .. } | WaitingForInitialInput { options },
+                SearchInProgress { options, .. } | WaitingForInitialInput { options } | OpenPdf { options, .. },
                 SearchTerm(term),
             ) => {
                 self.state = SearchInProgress {
                     search_term: term.to_string(),
-                    options: *options,
-                }
+                    options: *options
+                };
             }
             (Finished, _) => unreachable!(),
         }
@@ -316,7 +324,10 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
                     KeyCode::Enter => {
                         if input_in_progress == "q" {
                             input = Quit;
-                        } else if input_in_progress.starts_with('~') {
+                        } else if let Ok(last_result) = &input_in_progress.trim().parse::<u32>() {
+                            input = LastSearchResult(*last_result);
+                        }
+                        else if input_in_progress.starts_with('~') {
                             input = SearchOptionUpdate(Fuzzy(
                                 input_in_progress
                                     .strip_prefix('~')
@@ -566,10 +577,11 @@ fn search_litt_index(
 ) -> Result<(), LittError> {
     let num_docs = searcher.num_docs();
     println!(
-        "Search index \"{}\" ({}) for {}",
+        "Search index \"{}\" ({}) for {} (fuzzy={})",
         index_name,
         index_path.to_string_lossy(),
-        term
+        term,
+        opts.fuzzy
     );
     let start = Instant::now();
     let search_term = if opts.fuzzy {
@@ -726,9 +738,16 @@ fn main() -> Result<(), LittError> {
             Finished => {
                 break;
             }
+            OpenPdf {
+                last_result_num: last_res,
+                options: _,
+            } => match fast_open_result(&index_tracker, last_res) {
+                Ok(_) => println!(),
+                Err(e) => return Err(e),
+            }
             SearchInProgress {
                 search_term: final_term,
-                options: opts,
+                options: mut opts,
             } => match search_litt_index(
                 &search,
                 &mut index_tracker,
@@ -736,9 +755,12 @@ fn main() -> Result<(), LittError> {
                 &searcher,
                 &index_name,
                 final_term.to_string(),
-                opts,
+                &opts,
             ) {
-                Ok(_) => println!(),
+                Ok(_) => { 
+                    opts.fuzzy = false; 
+                    println!();
+                }
                 Err(e) => return Err(e),
             },
         }
