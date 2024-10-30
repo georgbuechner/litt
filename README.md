@@ -2,13 +2,20 @@
 Literature tool for searching all PDFs in a directory.
 
 ### tl;dr
-**Installing**:
+**Installing (binary)**:
 ```
 wget https://github.com/georgbuechner/litt/releases/download/v1.0.1/litt-ubuntu-latest 
 chmod +x litt-ubuntu-latest
 cp -f litt-ubuntu-latest /usr/local/bin/litt
 ```
 (Replace version and platform accordingly)
+
+**Installing (from source)**:
+```
+git clone https://github.com/georgbuechner/litt.git
+cargo build --release 
+sudo make install
+```
 
 **Usage**:
 ```
