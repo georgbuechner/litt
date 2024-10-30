@@ -278,14 +278,26 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
             if let Event::Key(key_event) = event::read()? {
                 match key_event.code {
                     KeyCode::Left => {
-                        execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                        input = BrowseBackward;
-                        break;
+                        if input_in_progress.is_empty() {
+                            execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
+                            input = BrowseBackward;
+                            break;
+                        } else if let Ok(cur_position) = crossterm::cursor::position() {
+                            if cur_position.0 > 2 {
+                                execute!(stdout, MoveToColumn(cur_position.0 - 1))?;
+                            }
+                        }
                     }
                     KeyCode::Right => {
-                        execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                        input = BrowseForward;
-                        break;
+                        if input_in_progress.is_empty() {
+                            execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
+                            input = BrowseForward;
+                            break;
+                        } else if let Ok(cur_position) = crossterm::cursor::position() {
+                            if cur_position.0-2 < (input_in_progress.len() as u16) {
+                                execute!(stdout, MoveToColumn(cur_position.0 + 1))?;
+                            }
+                        }
                     }
                     KeyCode::Up => {
                         if index > 0 {
@@ -307,8 +319,14 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
                         }
                     }
                     KeyCode::Char(c) => {
-                        input_in_progress.push(c);
-                        print!("{}", c); // Echo the character
+                        if let Ok(cur_position) = crossterm::cursor::position() {
+                            let pos: usize = (cur_position.0-2) as usize;
+                            if input_in_progress.len() >= pos {
+                                input_in_progress.insert_str(pos, &c.to_string());
+                                clear_and_print(&mut stdout, format!("> {}", input_in_progress), false)?;
+                                execute!(stdout, MoveToColumn(cur_position.0 + 1))?;
+                            }
+                        }
                         stdout.flush()?;
                     }
                     KeyCode::Backspace => {
