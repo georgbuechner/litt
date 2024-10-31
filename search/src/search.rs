@@ -15,6 +15,12 @@ use levenshtein::levenshtein;
 
 const FUZZY_PREVIEW_NOT_FOUND: &str = "[fuzzy match] No preview. We're sry.";
 
+fn normalize(s1: &str, s2: &str, dist: f64) -> f64 {
+    let max_len = s1.len().max(s2.len());
+    dist as f64 / max_len as f64
+}
+
+
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct SearchResult {
@@ -148,10 +154,10 @@ impl Search {
         let text = fs::read_to_string(path)?;
 
         match search_term {
-            SearchTerm::Fuzzy(term, distance) => {
+            SearchTerm::Fuzzy(term, _) => {
                 for t in term.split(" ").collect::<Vec<&str>>() {
                     if let Ok((prev, matched_term)) =
-                        self.get_fuzzy_preview(path, t, distance, &text)
+                        self.get_fuzzy_preview(path, t, &text)
                     {
                         return Ok((prev, matched_term.to_string()));
                     }
@@ -180,7 +186,6 @@ impl Search {
         &self,
         path: &str,
         term: &str,
-        distance: &u8,
         body: &str,
     ) -> Result<(String, String)> {
         let pindex: PageIndex = self
@@ -188,7 +193,7 @@ impl Search {
             .page_index(path)
             .map_err(|_| SearchError("".to_string()))?;
         let (matched_term, start, end) = self
-            .get_fuzzy_match(term, distance, pindex)
+            .get_fuzzy_match(term, pindex)
             .map_err(|_| SearchError("".to_string()))?;
         // Another safe way to get substrings using char_indices
         let start = body
@@ -211,20 +216,24 @@ impl Search {
     fn get_fuzzy_match(
         &self,
         term: &str,
-        distance: &u8,
         pindex: PageIndex,
     ) -> Result<(String, u32, u32)> {
         if pindex.contains_key(term) {
             let (start, end) = pindex.get(term).unwrap().first().unwrap();
             Ok((term.to_string(), *start, *end))
         } else {
+            let distance: f64 = 3.0;
             let mut cur: (String, u32, u32) = ("".to_string(), 0, 0);
-            let mut min_dist: usize = usize::MAX;
+            let mut min_dist: f64 = f64::MAX;
             for (word, matches) in pindex {
-                let dist: usize = if word.contains(term) {
-                    1
+                let dist: f64 = if word == term {
+                    0.0
+                } else if word.starts_with(term) {
+                    0.1
+                }else if word.contains(term) {
+                    0.29
                 } else {
-                    levenshtein(term, &word)
+                    normalize(&word, term, levenshtein(term, &word) as f64)
                 };
                 if dist < min_dist {
                     min_dist = dist;
@@ -232,7 +241,7 @@ impl Search {
                     cur = (word.to_string(), *start, *end)
                 }
             }
-            if min_dist as u8 <= *distance {
+            if min_dist <= distance/10.0 {
                 Ok(cur)
             } else {
                 Err(SearchError("".to_string()))
@@ -346,15 +355,12 @@ mod tests {
             ("river", vec![(1, "drops"), (2, "foothill")]), // search result
             ("branch", vec![(2, "arch")]),
             ("branch Sole", vec![(1, "Salinas River"), (2, "arch")]),
-            // ("branch Sole", vec![2]), // Does not work. finds Soledad @ page 1
-            // ("branch Sole", vec![1]), // Does not work. finds branches @ page 1
             ("Soledad", vec![(1, "Salinas")]),
             ("Soledud", vec![(1, "River")]),
             ("Soledud Salinos", vec![(1, "the")]), // actual fuzzy
-            // ("Sole AND Sali", vec![1]), // Does not work: searching for ['sole' 'and', 'sali']
             (
                 "mystifiziert",
-                vec![(1, "Mystifizierung"), (2, "No preview")],
+                vec![(1, "Mystifizierung"), (2, "Mystifizierung")],
             ),
         ]);
         // one-word search returning 1 result with 1 page
