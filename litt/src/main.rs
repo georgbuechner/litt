@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 use std::{env, io};
+use unicode_segmentation::UnicodeSegmentation;
 
 use clap::CommandFactory;
 use clap::Parser;
@@ -330,13 +331,18 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
                         stdout.flush()?;
                     }
                     KeyCode::Backspace => {
-                        if !input_in_progress.is_empty() {
-                            input_in_progress.pop();
+                        if let Ok(cur_position) = crossterm::cursor::position() {
+                            input_in_progress = input_in_progress.as_str()
+                                .graphemes(true)
+                                .enumerate()
+                                .filter_map(|(i, g)| if i == (cur_position.0 as usize)-3 { None } else { Some(g) })
+                                .collect();
                             clear_and_print(
                                 &mut stdout,
                                 format!("> {}", input_in_progress),
                                 false,
                             )?;
+                            execute!(stdout, MoveToColumn(cur_position.0 - 1))?;
                         }
                     }
                     KeyCode::Enter => {
