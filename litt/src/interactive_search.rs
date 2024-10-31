@@ -4,20 +4,17 @@ use crate::InteractiveSearchInput::{*};
 use crate::SearchOptions;
 
 pub(super) struct InteractiveSearch {
-    state: InteractiveSearchState
+    state: InteractiveSearchState,
+    options: SearchOptions,
 }
 
 pub(super) enum InteractiveSearchState {
-    WaitingForInitialInput {
-        options: SearchOptions,
-    },
+    WaitingForInitialInput,
     SearchInProgress {
         search_term: String,
-        options: SearchOptions,
     },
-    OpenPdf {
+OpenPdf {
         last_result_num: u32,
-        options: SearchOptions,
     },
     Finished,
 }
@@ -41,7 +38,8 @@ pub(super) enum InteractiveSearchInput {
 impl InteractiveSearch {
     pub(super) fn new(options: SearchOptions) -> Self {
         Self {
-            state: WaitingForInitialInput { options },
+            state: WaitingForInitialInput,
+            options
         }
     }
     
@@ -50,8 +48,9 @@ impl InteractiveSearch {
     }
 
     pub(super) fn display_instructions(&self, index_name: &str) {
+        let opts = self.options;
         match &self.state {
-            WaitingForInitialInput { options: opts, .. } => {
+            WaitingForInitialInput => {
                 println!(
                     "Interactive search in \"{}\" (limit={}, distance={}; type \"#set <variable> \
                     <value>\" to change, \"q\" to quit, start search-term with \"~\" for \
@@ -59,7 +58,7 @@ impl InteractiveSearch {
                     index_name, opts.limit, opts.distance
                 );
             }
-            SearchInProgress {options: opts, ..} | OpenPdf { options: opts, .. } => {
+            SearchInProgress { .. } | OpenPdf { .. } => {
                 println!(
                     "Interactive search in \"{}\" (showing results {} to {}; type \"→\" for next, \
                     \"←\" for previous {} results, \"↑\"|\"↓\" to cycle history, \"q\" to quit)",
@@ -75,6 +74,7 @@ impl InteractiveSearch {
 
     /// Transition the interactive search state machine.
     pub(super) fn state_transition(&mut self, input: &InteractiveSearchInput) {
+        let mut options = &mut self.options;
         match (&mut self.state, input) {
             // No state change when input is empty
             (_, Empty) => {}
@@ -82,9 +82,9 @@ impl InteractiveSearch {
                 self.state = Finished;
             }
             // Open pdf/ result
-            (WaitingForInitialInput { options } | SearchInProgress { options, .. } | OpenPdf { options, .. }, LastSearchResult(last_number_num)) => {
+            (WaitingForInitialInput | SearchInProgress {..} | OpenPdf { .. }, LastSearchResult(last_number_num)) => {
                 self.state = OpenPdf{ 
-                    last_result_num: *last_number_num, options: *options
+                    last_result_num: *last_number_num, 
                 }
             }
             // Trying to browse results without having searched; print warning and do nothing.
@@ -93,13 +93,13 @@ impl InteractiveSearch {
             }
             // Browsing results
             (
-                SearchInProgress { ref mut options, .. } | OpenPdf { ref mut options, .. },
+                SearchInProgress { .. } | OpenPdf { .. },
                 BrowseForward,
             ) => {
                 options.offset += options.limit;
             }
             (
-                SearchInProgress { ref mut options, .. } | OpenPdf { ref mut options, .. },
+                SearchInProgress { .. } | OpenPdf { .. },
                 BrowseBackward,
             ) => {
                 if options.offset == 0 {
@@ -110,13 +110,9 @@ impl InteractiveSearch {
             }
             // Change options or fuzzy search
             (
-                WaitingForInitialInput {
-                    ref mut options, ..
-                }
-                | SearchInProgress {
-                    ref mut options, ..
-                }
-                | OpenPdf { ref mut options, .. },
+                WaitingForInitialInput
+                | SearchInProgress { .. }
+                | OpenPdf { .. },
                 SearchOptionUpdate(update),
             ) => match update {
                 Limit(limit) => {
@@ -129,18 +125,16 @@ impl InteractiveSearch {
                     options.fuzzy = true;
                     self.state = SearchInProgress {
                         search_term: term.to_string(),
-                        options: *options,
                     }
                 }
             },
             // Normal search
             (
-                SearchInProgress { options, .. } | WaitingForInitialInput { options } | OpenPdf { options, .. },
+                SearchInProgress { .. } | WaitingForInitialInput | OpenPdf { .. },
                 SearchTerm(term),
             ) => {
                 self.state = SearchInProgress {
-                    search_term: term.to_string(),
-                    options: *options
+                    search_term: term.to_string()
                 };
             }
             (Finished, _) => unreachable!(),
