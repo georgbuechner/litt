@@ -20,6 +20,19 @@ fn normalize(s1: &str, s2: &str, dist: f64) -> f64 {
     dist / max_len as f64
 }
 
+fn cmp(s1: &str, s2: &str) -> f64 {
+    let dist: f64 = if s1 == s2 {
+        0.0
+    } else if s1.starts_with(s2) {
+        0.1
+    } else if s1.contains(s2) {
+        0.29
+    } else {
+        normalize(&s1, s2, levenshtein(s2, &s1) as f64)
+    };
+    dist
+}
+
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct SearchResult {
@@ -210,26 +223,20 @@ impl Search {
             let (start, end) = pindex.get(term).unwrap().first().unwrap();
             Ok((term.to_string(), *start, *end))
         } else {
-            let distance: f64 = 3.0;
             let mut cur: (String, u32, u32) = ("".to_string(), 0, 0);
             let mut min_dist: f64 = f64::MAX;
             for (word, matches) in pindex {
-                let dist: f64 = if word == term {
-                    0.0
-                } else if word.starts_with(term) {
-                    0.1
-                } else if word.contains(term) {
-                    0.29
-                } else {
-                    normalize(&word, term, levenshtein(term, &word) as f64)
-                };
-                if dist < min_dist {
+                let dist = cmp(&word, term);
+                // Use, if smaller than currently smallest distance. 
+                // If distance is equal to currently smallest distance than use only if the 
+                // inverse comparison is smaller then the current smallest distance.
+                if dist < min_dist || (dist == min_dist && cmp(&word, term) < min_dist) {
                     min_dist = dist;
                     let (start, end) = matches.first().unwrap_or(&(0, 0));
                     cur = (word.to_string(), *start, *end)
-                }
+                } 
             }
-            if min_dist <= distance / 10.0 {
+            if min_dist <= 0.56 {
                 Ok(cur)
             } else {
                 Err(SearchError("".to_string()))
