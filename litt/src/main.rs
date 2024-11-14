@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 use std::{env, io};
+use unicode_segmentation::UnicodeSegmentation;
 
 use clap::CommandFactory;
 use clap::Parser;
@@ -39,6 +40,20 @@ enum LittError {
     LittIndexError(#[from] litt_index::LittIndexError),
     #[error(transparent)]
     LittIndexTrackerError(#[from] tracker::LittIndexTrackerError),
+}
+
+enum SearchOptionUpdate {
+    Limit(usize),
+    Distance(u8),
+}
+
+enum InteractiveSearchInput {
+    BrowseBackword,
+    BrowseForward,
+    Quit,
+    Search(String),
+    SearchOptionsUpdate(SearchOptionUpdate),
+    OpenPdf(u32),
 }
 
 pub struct SearchOptions {
@@ -104,10 +119,11 @@ fn show_failed_documents_error(index: &Index) {
     }
 }
 
-fn read(history: &mut Vec<String>) -> Result<String, LittError> {
+fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> {
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
     let mut input = String::new();
+    let cmd: InteractiveSearchInput;
     let mut index = history.len();
     print!("> ");
     stdout.flush()?;
@@ -132,14 +148,28 @@ fn read(history: &mut Vec<String>) -> Result<String, LittError> {
             if let Event::Key(key_event) = event::read()? {
                 match key_event.code {
                     KeyCode::Left => {
-                        execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                        input = "<".to_string();
-                        break;
+                        // Only browse if input is empty, otherwise move cursor backwords
+                        if input.is_empty() {
+                            execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
+                            cmd = InteractiveSearchInput::BrowseBackword;
+                            break;
+                        } else if let Ok(cursor_pos) = crossterm::cursor::position() {
+                            if cursor_pos.0 > 2 {
+                                execute!(stdout, MoveToColumn(cursor_pos.0 - 1))?;
+                            }
+                        }
                     }
                     KeyCode::Right => {
-                        execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
-                        input = ">".to_string();
-                        break;
+                        // Only browse if input is empty, otherwise move cursor forwards
+                        if input.is_empty() {
+                            execute!(stdout, terminal::Clear(terminal::ClearType::CurrentLine))?;
+                            cmd = InteractiveSearchInput::BrowseForward;
+                            break;
+                        } else if let Ok(cursor_pos) = crossterm::cursor::position() {
+                            if cursor_pos.0 - 2 < (input.len() as u16) {
+                                execute!(stdout, MoveToColumn(cursor_pos.0 + 1))?;
+                            }
+                        }
                     }
                     KeyCode::Up => {
                         if index > 0 {
@@ -161,17 +191,64 @@ fn read(history: &mut Vec<String>) -> Result<String, LittError> {
                         }
                     }
                     KeyCode::Char(c) => {
-                        input.push(c);
-                        print!("{}", c); // Echo the character
-                        stdout.flush()?;
+                        if let Ok(cursor_pos) = crossterm::cursor::position() {
+                            let pos: usize = (cursor_pos.0 - 2) as usize;
+                            if input.len() >= pos {
+                                input.insert_str(pos, &c.to_string());
+                                clear_and_print(&mut stdout, format!("> {}", input), false)?;
+                                execute!(stdout, MoveToColumn(cursor_pos.0 + 1))?;
+                            }
+                        }
                     }
                     KeyCode::Backspace => {
-                        if !input.is_empty() {
-                            input.pop();
-                            clear_and_print(&mut stdout, format!("> {}", input), false)?;
+                        // Remove char at current cursor position and move position left.
+                        if let Ok(cursor_pos) = crossterm::cursor::position() {
+                            if !input.is_empty() {
+                                input = input
+                                    .as_str()
+                                    .graphemes(true)
+                                    .enumerate()
+                                    .filter_map(|(i, g)| {
+                                        if i == (cursor_pos.0 as usize) - 3 {
+                                            None
+                                        } else {
+                                            Some(g)
+                                        }
+                                    })
+                                    .collect();
+                                clear_and_print(&mut stdout, format!("> {}", input), false)?;
+                                execute!(stdout, MoveToColumn(cursor_pos.0 - 1))?;
+                            }
                         }
                     }
                     KeyCode::Enter => {
+                        if input == "q" {
+                            cmd = InteractiveSearchInput::Quit;
+                        } else if let Ok(result_num) = &input.trim().parse::<u32>() {
+                            cmd = InteractiveSearchInput::OpenPdf(*result_num);
+                        } else if input.starts_with("#") {
+                            let parts: Vec<&str> = input.split(" ").collect();
+                            match parts.get(1) {
+                                Some(&"limit") => {
+                                    cmd = InteractiveSearchInput::SearchOptionsUpdate(
+                                        SearchOptionUpdate::Limit(parts[2].parse().unwrap()),
+                                    )
+                                }
+                                Some(&"distance") => {
+                                    cmd = InteractiveSearchInput::SearchOptionsUpdate(
+                                        SearchOptionUpdate::Distance(parts[2].parse().unwrap()),
+                                    )
+                                }
+                                _ => {
+                                    println!(
+                                        "You can only set \"limit\", \"fuzzy\" or \"distance\"..."
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else {
+                            cmd = InteractiveSearchInput::Search(input.to_string());
+                        }
                         break;
                     }
                     _ => {}
@@ -184,7 +261,7 @@ fn read(history: &mut Vec<String>) -> Result<String, LittError> {
     if history.is_empty() || (!history.is_empty() && history.last().unwrap() != &input) {
         history.push(input.clone());
     }
-    Ok(input)
+    Ok(cmd)
 }
 
 /*
@@ -290,11 +367,11 @@ fn remove_litt_index(
     };
     let index_path = path.join(LITT_DIRECTORY_NAME);
     let msg = match fs::remove_dir_all(index_path) {
-            //. expect("Could not remove index-file")
-    Ok(()) => "Ok.",
-            Err(e) if e.kind() == io::ErrorKind::NotFound => "Index directory didn't exist.",
-            Err(e) => return Err(LittError::General(e.to_string())),
-        };// remove litt-index from tracker.
+        //. expect("Could not remove index-file")
+        Ok(()) => "Ok.",
+        Err(e) if e.kind() == io::ErrorKind::NotFound => "Index directory didn't exist.",
+        Err(e) => return Err(LittError::General(e.to_string())),
+    }; // remove litt-index from tracker.
     if let Err(e) = index_tracker.remove(index_name.clone()) {
         return Err(LittError::General(e.to_string()));
     }
@@ -523,39 +600,71 @@ fn main() -> Result<(), LittError> {
     let mut history: Vec<String> = Vec::new();
     loop {
         if search_term.is_empty() {
-            println!("Interactive search in \"{}\" (limit={}, distance={}; type \"#set <variable> <value>\" to change, \"q\" to quit, start search-term with \"~\" for fuzzy-search)", index_name.clone(), opts.limit, opts.distance);
+            println!(
+                "Interactive search in \"{}\" (limit={}, distance={}; type \"#set <variable> \
+                <value>\" to change, \"q\" to quit, start search-term with \"~\" for \
+                fuzzy-search)",
+                index_name.clone(),
+                opts.limit,
+                opts.distance
+            );
         } else {
-            println!("Interactive search in \"{}\" (showing results {} to {}; type \"→\" for next, \"←\" for previous {} results, \"↑\"|\"↓\" to cycle history, \"q\" to quit)", index_name.clone(), opts.offset, opts.offset+opts.limit, opts.limit);
+            println!(
+                "Interactive search in \"{}\" (showing results {} to {}; type \"→\" for next,\
+                \"←\" for previous {} results, \"↑\"|\"↓\" to cycle history, \"q\" to quit)",
+                index_name.clone(),
+                opts.offset,
+                opts.offset + opts.limit,
+                opts.limit
+            );
         }
-        let inp = read(&mut history)?;
-        if inp == "q" {
-            break;
-        }
-        if (inp == ">" || inp == "<") && search_term.is_empty() {
-            println!("No search term specified! Enter search term first...");
-            continue;
-        } else if inp == "<" && opts.offset == 0 {
-            println!("Offset is already zero...");
-            continue;
-        } else if inp == ">" {
-            opts.offset += opts.limit;
-        } else if inp == "<" {
-            opts.offset -= opts.limit;
-        } else if inp.starts_with("#") {
-            let parts: Vec<&str> = inp.split(" ").collect();
-            match parts.get(1) {
-                Some(&"limit") => opts.limit = parts[2].parse().unwrap(),
-                Some(&"distance") => opts.distance = parts[2].parse().unwrap(),
-                _ => {
-                    println!("You can only set \"limit\", \"fuzzy\" or \"distance\"...");
+        match read(&mut history) {
+            Ok(InteractiveSearchInput::Quit) => break,
+            Ok(InteractiveSearchInput::BrowseForward) => {
+                if search_term.is_empty() {
+                    println!("No search term specified! Enter search term first...");
+                    continue;
+                } else {
+                    opts.offset += opts.limit;
+                }
+            }
+            Ok(InteractiveSearchInput::BrowseBackword) => {
+                if search_term.is_empty() {
+                    println!("No search term specified! Enter search term first...");
+                    continue;
+                } else if opts.offset == 0 {
+                    println!("Offset is already zero...");
+                    continue;
+                } else {
+                    opts.offset += opts.limit;
+                }
+            }
+            Ok(InteractiveSearchInput::OpenPdf(result_num)) => {
+                match fast_open_result(&index_tracker, &result_num) {
+                    Ok(_) => continue,
+                    Err(e) => {
+                        println!("{}", e);
+                        continue;
+                    }
+                }
+            }
+            Ok(InteractiveSearchInput::SearchOptionsUpdate(update)) => {
+                // Do search option update
+                match update {
+                    SearchOptionUpdate::Limit(limit) => opts.limit = limit,
+                    SearchOptionUpdate::Distance(distance) => opts.distance = distance,
+                }
+                // If a search term was already specified, repeat search with updates search
+                // options otherwise continue
+                if search_term.is_empty() {
                     continue;
                 }
             }
-            if search_term.is_empty() {
+            Ok(InteractiveSearchInput::Search(term)) => search_term = term,
+            Err(_) => {
+                println!("[error] Unkown error during input...");
                 continue;
             }
-        } else {
-            search_term = inp;
         }
         let final_term = search_term.strip_prefix("~").unwrap_or(&search_term);
         opts.fuzzy = search_term.starts_with("~");

@@ -17,9 +17,8 @@ const FUZZY_PREVIEW_NOT_FOUND: &str = "[fuzzy match] No preview. We're sry.";
 
 fn normalize(s1: &str, s2: &str, dist: f64) -> f64 {
     let max_len = s1.len().max(s2.len());
-    dist as f64 / max_len as f64
+    dist / max_len as f64
 }
-
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -156,9 +155,7 @@ impl Search {
         match search_term {
             SearchTerm::Fuzzy(term, _) => {
                 for t in term.split(" ").collect::<Vec<&str>>() {
-                    if let Ok((prev, matched_term)) =
-                        self.get_fuzzy_preview(path, t, &text)
-                    {
+                    if let Ok((prev, matched_term)) = self.get_fuzzy_preview(path, t, &text) {
                         return Ok((prev, matched_term.to_string()));
                     }
                 }
@@ -182,12 +179,7 @@ impl Search {
         Ok((self.highlight(snippet), get_first_term(term)))
     }
 
-    fn get_fuzzy_preview(
-        &self,
-        path: &str,
-        term: &str,
-        body: &str,
-    ) -> Result<(String, String)> {
+    fn get_fuzzy_preview(&self, path: &str, term: &str, body: &str) -> Result<(String, String)> {
         let pindex: PageIndex = self
             .index
             .page_index(path)
@@ -213,11 +205,7 @@ impl Search {
         Ok((substring.replace('\n', " "), matched_term))
     }
 
-    fn get_fuzzy_match(
-        &self,
-        term: &str,
-        pindex: PageIndex,
-    ) -> Result<(String, u32, u32)> {
+    fn get_fuzzy_match(&self, term: &str, pindex: PageIndex) -> Result<(String, u32, u32)> {
         if pindex.contains_key(term) {
             let (start, end) = pindex.get(term).unwrap().first().unwrap();
             Ok((term.to_string(), *start, *end))
@@ -230,7 +218,7 @@ impl Search {
                     0.0
                 } else if word.starts_with(term) {
                     0.1
-                }else if word.contains(term) {
+                } else if word.contains(term) {
                     0.29
                 } else {
                     normalize(&word, term, levenshtein(term, &word) as f64)
@@ -241,7 +229,7 @@ impl Search {
                     cur = (word.to_string(), *start, *end)
                 }
             }
-            if min_dist <= distance/10.0 {
+            if min_dist <= distance / 10.0 {
                 Ok(cur)
             } else {
                 Err(SearchError("".to_string()))
