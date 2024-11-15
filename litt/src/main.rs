@@ -636,7 +636,7 @@ fn main() -> Result<(), LittError> {
                     println!("Offset is already zero...");
                     continue;
                 } else {
-                    opts.offset += opts.limit;
+                    opts.offset -= opts.limit;
                 }
             }
             Ok(InteractiveSearchInput::OpenPdf(result_num)) => {
