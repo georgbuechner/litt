@@ -194,7 +194,7 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
                         if let Ok(cursor_pos) = crossterm::cursor::position() {
                             let pos: usize = (cursor_pos.0 - 2) as usize;
                             if input.len() >= pos {
-                                input.insert_str(pos, &c.to_string());
+                                input.insert(pos, c);
                                 clear_and_print(&mut stdout, format!("> {}", input), false)?;
                                 execute!(stdout, MoveToColumn(cursor_pos.0 + 1))?;
                             }
