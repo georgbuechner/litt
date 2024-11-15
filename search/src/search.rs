@@ -15,6 +15,14 @@ use levenshtein::levenshtein;
 
 const FUZZY_PREVIEW_NOT_FOUND: &str = "[fuzzy match] No preview. We're sry.";
 
+#[derive(Default)]
+struct FuzzyResult {
+    matched_term: String,
+    start: u32,
+    end: u32,
+    dist: f64,
+}
+
 fn normalize(s1: &str, s2: &str, dist: f64) -> f64 {
     let max_len = s1.len().max(s2.len());
     dist / max_len as f64
@@ -28,7 +36,7 @@ fn cmp(s1: &str, s2: &str) -> f64 {
     } else if s1.contains(s2) {
         0.29
     } else {
-        normalize(&s1, s2, levenshtein(s2, &s1) as f64)
+        normalize(s1, s2, levenshtein(s2, s1) as f64)
     };
     dist
 }
@@ -167,10 +175,16 @@ impl Search {
 
         match search_term {
             SearchTerm::Fuzzy(term, _) => {
+                let mut cur: (String, String, f64) = ("".to_string(), "".to_string(), f64::MAX);
                 for t in term.split(" ").collect::<Vec<&str>>() {
-                    if let Ok((prev, matched_term)) = self.get_fuzzy_preview(path, t, &text) {
-                        return Ok((prev, matched_term.to_string()));
+                    if let Ok((prev, matched_term, dist)) = self.get_fuzzy_preview(path, t, &text) {
+                        if dist < cur.2 {
+                            cur = (prev, matched_term, dist)
+                        }
                     }
+                }
+                if cur.2 != f64::MAX {
+                    return Ok((cur.0, cur.1));
                 }
                 Ok((FUZZY_PREVIEW_NOT_FOUND.to_string(), "".to_string())) // return empty string so
                                                                           // that zathura does not
@@ -192,51 +206,68 @@ impl Search {
         Ok((self.highlight(snippet), get_first_term(term)))
     }
 
-    fn get_fuzzy_preview(&self, path: &str, term: &str, body: &str) -> Result<(String, String)> {
+    fn get_fuzzy_preview(
+        &self,
+        path: &str,
+        term: &str,
+        body: &str,
+    ) -> Result<(String, String, f64)> {
         let pindex: PageIndex = self
             .index
             .page_index(path)
             .map_err(|_| SearchError("".to_string()))?;
-        let (matched_term, start, end) = self
+        let res = self
             .get_fuzzy_match(term, pindex)
             .map_err(|_| SearchError("".to_string()))?;
         // Another safe way to get substrings using char_indices
         let start = body
             .char_indices()
-            .nth(start.saturating_sub(20) as usize)
+            .nth(res.start.saturating_sub(20) as usize)
             .unwrap_or((0, ' '))
             .0;
         let end = body
             .char_indices()
-            .nth((end + 20) as usize)
+            .nth((res.end + 20) as usize)
             .unwrap_or((body.len() - 1, ' '))
             .0;
         let substring = &format!("...{}...", &body[start..end]);
         let substring = substring
             .to_string()
-            .replace(&matched_term, &format!("**{}**", matched_term));
-        Ok((substring.replace('\n', " "), matched_term))
+            .replace(&res.matched_term, &format!("**{}**", res.matched_term));
+        Ok((substring.replace('\n', " "), res.matched_term, res.dist))
     }
 
-    fn get_fuzzy_match(&self, term: &str, pindex: PageIndex) -> Result<(String, u32, u32)> {
+    fn get_fuzzy_match(&self, term: &str, pindex: PageIndex) -> Result<FuzzyResult> {
         if pindex.contains_key(term) {
             let (start, end) = pindex.get(term).unwrap().first().unwrap();
-            Ok((term.to_string(), *start, *end))
+            Ok(FuzzyResult {
+                matched_term: term.to_string(),
+                start: *start,
+                end: *end,
+                dist: 0.0,
+            })
         } else {
-            let mut cur: (String, u32, u32) = ("".to_string(), 0, 0);
-            let mut min_dist: f64 = f64::MAX;
+            let mut cur = FuzzyResult {
+                dist: f64::MAX,
+                ..Default::default()
+            };
             for (word, matches) in pindex {
                 let dist = cmp(&word, term);
-                // Use, if smaller than currently smallest distance. 
-                // If distance is equal to currently smallest distance than use only if the 
+                // Use, if smaller than currently smallest distance.
+                // If distance is equal to currently smallest distance than use only if the
                 // inverse comparison is smaller then the current smallest distance.
-                if dist < min_dist || (dist == min_dist && cmp(&word, term) < min_dist) {
-                    min_dist = dist;
+                if dist < cur.dist || (dist == cur.dist && cmp(&word, term) < cur.dist) {
+                    cur.dist = dist;
                     let (start, end) = matches.first().unwrap_or(&(0, 0));
-                    cur = (word.to_string(), *start, *end)
-                } 
+                    cur = FuzzyResult {
+                        matched_term: word.to_string(),
+                        start: *start,
+                        end: *end,
+                        dist,
+                    }
+                }
             }
-            if min_dist <= 0.56 {
+            if cur.dist <= 0.56 {
                 Ok(cur)
             } else {
                 Err(SearchError("".to_string()))
