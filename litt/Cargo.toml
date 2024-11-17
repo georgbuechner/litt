@@ -11,6 +11,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 shellexpand = { workspace = true }
 colored = { workspace = true }
+crossterm = { workspace = true }
+unicode-segmentation = { workspace = true }
 litt_search = { path = "../search" }
 litt_shared = { path = "../shared" }
 litt_index = { path = "../index" }
