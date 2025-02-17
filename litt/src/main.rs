@@ -65,6 +65,24 @@ pub struct SearchOptions {
 
 // helper functions
 
+fn insert_grapheme(input: &mut String, pos: usize, c: char) {
+    let graphemes: Vec<&str> = input.graphemes(true).collect(); // Split at grapheme clusters
+    let mut new_string = String::new();
+
+    for (i, g) in graphemes.iter().enumerate() {
+        if i == pos {
+            new_string.push(c);
+        }
+        new_string.push_str(g);
+    }
+    
+    if pos >= graphemes.len() {
+        new_string.push(c);
+    }
+
+    *input = new_string; // Modify the original String
+}
+
 fn open_pdf(path: String, page: u32, term: String) -> Result<(), LittError> {
     let mut cmd = std::process::Command::new("zathura");
     cmd.arg(&path)
@@ -137,7 +155,7 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
         execute!(stdout, MoveToColumn(0))?;
         print!("{}", line);
         if adjust_cursor {
-            execute!(stdout, MoveToColumn(line.len() as u16))?;
+            execute!(stdout, MoveToColumn(line.graphemes(true).count() as u16))?;
         }
         stdout.flush()?;
         Ok(())
@@ -166,7 +184,7 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
                             cmd = InteractiveSearchInput::BrowseForward;
                             break;
                         } else if let Ok(cursor_pos) = crossterm::cursor::position() {
-                            if cursor_pos.0 - 2 < (input.len() as u16) {
+                            if cursor_pos.0 - 2 < (input.graphemes(true).count() as u16) {
                                 execute!(stdout, MoveToColumn(cursor_pos.0 + 1))?;
                             }
                         }
@@ -193,8 +211,8 @@ fn read(history: &mut Vec<String>) -> Result<InteractiveSearchInput, LittError> 
                     KeyCode::Char(c) => {
                         if let Ok(cursor_pos) = crossterm::cursor::position() {
                             let pos: usize = (cursor_pos.0 - 2) as usize;
-                            if input.len() >= pos {
-                                input.insert(pos, c);
+                            if input.graphemes(true).count() >= pos {
+                                insert_grapheme(&mut input, pos, c);
                                 clear_and_print(&mut stdout, format!("> {}", input), false)?;
                                 execute!(stdout, MoveToColumn(cursor_pos.0 + 1))?;
                             }
