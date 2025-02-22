@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 use std::{env, io};
+use litt_shared::search_schema::SearchSchema;
 use unicode_segmentation::UnicodeSegmentation;
 
 use clap::CommandFactory;
@@ -13,11 +14,11 @@ extern crate litt_search;
 use crossterm::cursor::MoveToColumn;
 use litt_index::index::Index;
 use litt_search::search::Search;
-use litt_shared::search_schema::SearchSchema;
 use litt_shared::LITT_DIRECTORY_NAME;
 
 mod cli;
 mod tracker;
+
 use cli::Cli;
 use tantivy::Searcher;
 use tracker::IndexTracker;
@@ -607,6 +608,7 @@ fn main() -> Result<(), LittError> {
             &opts,
         );
     }
+    
     // do interactive search
     let mut opts = SearchOptions {
         limit: 10,
