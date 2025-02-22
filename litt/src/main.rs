@@ -1,10 +1,10 @@
+use litt_shared::search_schema::SearchSchema;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 use std::{env, io};
-use litt_shared::search_schema::SearchSchema;
 use unicode_segmentation::UnicodeSegmentation;
 
 use clap::CommandFactory;
@@ -608,7 +608,7 @@ fn main() -> Result<(), LittError> {
             &opts,
         );
     }
-    
+
     // do interactive search
     let mut opts = SearchOptions {
         limit: 10,
@@ -680,7 +680,10 @@ fn main() -> Result<(), LittError> {
                     continue;
                 }
             }
-            Ok(InteractiveSearchInput::Search(term)) => search_term = term,
+            Ok(InteractiveSearchInput::Search(term)) => {
+                opts.offset = 0;
+                search_term = term;
+            }
             Err(_) => {
                 println!("[error] Unkown error during input...");
                 continue;
