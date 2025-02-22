@@ -75,7 +75,7 @@ fn insert_grapheme(input: &mut String, pos: usize, c: char) {
         }
         new_string.push_str(g);
     }
-    
+
     if pos >= graphemes.len() {
         new_string.push(c);
     }
