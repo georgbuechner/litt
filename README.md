@@ -21,6 +21,7 @@ sudo make install
 ```python
 litt <index-name> -i <path-to-documents>  # create new index <index-name>
 litt <index-name> <search-term>  # search for <search-term> in <index-name>
+litt <index-name> # start interactive search
 ```
 
 <p align="center">
