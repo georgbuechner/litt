@@ -20,3 +20,8 @@ open = "4.1.0"
 thiserror = "1.0"
 crossterm = "0.26"
 unicode-segmentation = "1.9"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
