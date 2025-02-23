@@ -2,6 +2,7 @@
 name = "litt"
 version = "1.0.1"
 edition = "2021"
+repository = "https://github.com/georgbuechner/litt/"
 
 [dependencies]
 tantivy = { workspace = true }
