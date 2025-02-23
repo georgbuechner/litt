@@ -5,7 +5,7 @@ Literature tool for searching all PDFs in a directory.
 **Installing (Download Prebuilt Artifact)**:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/georgbuechner/litt/releases/latest/download/merge-pr-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/georgbuechner/litt/releases/latest/download/litt-installer.sh | sh
 ```
 
 **Installing (With Cargo/Local Build)**:
